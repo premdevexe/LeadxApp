@@ -39,6 +39,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   DateTime? _lastBackTime;
   bool _isLocked = false;
   bool _isAuthenticating = false;
+  DateTime? _pausedAt;
+  String? _lockError;
 
   @override
   void initState() {
@@ -60,12 +62,34 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      if (BiometricService.shared.isBiometricEnabled &&
-          BiometricService.shared.lockOnResume &&
-          !_isLocked) {
+    if (state == AppLifecycleState.paused) {
+      // Record pause timestamp only when not actively showing a biometric prompt
+      if (!BiometricService.shared.isAuthenticating && !_isAuthenticating) {
+        _pausedAt = DateTime.now();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      final bio = BiometricService.shared;
+      // If already locked or actively authenticating, skip
+      if (_isLocked || _isAuthenticating || bio.isAuthenticating) {
+        return;
+      }
+
+      // Ignore resume events if authentication just succeeded in the last 2.5 seconds
+      final lastSuccess = bio.lastAuthSuccessTime;
+      if (lastSuccess != null &&
+          DateTime.now().difference(lastSuccess) < const Duration(milliseconds: 2500)) {
+        return;
+      }
+
+      // Only lock if the app was genuinely backgrounded by user action
+      final wasBackgrounded = _pausedAt != null &&
+          DateTime.now().difference(_pausedAt!) > const Duration(milliseconds: 500);
+      _pausedAt = null;
+
+      if (bio.isBiometricEnabled && bio.lockOnResume && wasBackgrounded) {
         setState(() {
           _isLocked = true;
+          _lockError = null;
         });
         _triggerBiometricAuth();
       }
@@ -74,7 +98,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Future<void> _triggerBiometricAuth() async {
     if (_isAuthenticating) return;
-    _isAuthenticating = true;
+    setState(() {
+      _isAuthenticating = true;
+      _lockError = null;
+    });
 
     final result = await BiometricService.shared.authenticateDetailed(
       reason: 'Authenticate to unlock LeadX CRM',
@@ -85,6 +112,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       _isAuthenticating = false;
       if (result.success) {
         _isLocked = false;
+        _lockError = null;
+      } else {
+        _lockError = result.errorMessage;
       }
     });
 
@@ -306,6 +336,41 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               ),
 
               const Spacer(flex: 2),
+
+              if (_lockError != null && _lockError!.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3F1B1B) : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Color(0xFFEF4444),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _lockError!,
+                          style: TextStyle(
+                            fontFamily: AppTypography.fontFamily,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Unlock Button
               SizedBox(
@@ -628,7 +693,6 @@ class _MenuBody extends StatelessWidget {
         row(Icons.task_alt_outlined, 'Follow-ups', () => _nav(context, const FollowUpsScreen())),
         row(Icons.report_problem_outlined, 'Customer Issues', () => _nav(context, const CustomerIssuesScreen())),
         header('Account'),
-        row(Icons.person_outline, 'Profile & Settings', () => _nav(context, const ProfileScreen())),
         row(Icons.logout, 'Logout', logout,
             labelColor: StatusPalette.danger(cs)),
         const SizedBox(height: 16),

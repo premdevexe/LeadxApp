@@ -13,7 +13,6 @@ import '../../shared/models/order.dart' show Order;
 import '../../shared/models/subscription.dart' show Subscription;
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
-import '../profile/profile_screen.dart';
 
 /// The employee dashboard: summary figures, metric cards, recent orders,
 /// follow-ups, expiring subscriptions and a 6-month sales trajectory.
@@ -167,11 +166,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             : null,
         onRefresh: _load,
         onNotifications: notifications.isEmpty ? null : _showNotificationsPanel,
-        onProfileTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          );
-        },
         onLogout: () => _confirmLogout(context, auth),
       ),
     );

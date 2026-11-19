@@ -1065,7 +1065,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
     this.onMenuTap,
     this.onRefresh,
     this.onNotifications,
-    this.onProfileTap,
     this.onLogout,
   });
 
@@ -1078,7 +1077,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onMenuTap;
   final VoidCallback? onRefresh;
   final VoidCallback? onNotifications;
-  final VoidCallback? onProfileTap;
   final VoidCallback? onLogout;
 
   @override
@@ -1197,21 +1195,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             badge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : '$unreadCount') : null,
           ),
           const SizedBox(width: 8),
-          Material(
-            type: MaterialType.transparency,
-            child: Tooltip(
-              message: 'My Profile',
-              child: InkWell(
-                onTap: onProfileTap,
-                borderRadius: BorderRadius.circular(16),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: _AvatarDot(name: employeeName, isDark: isDark),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           // The menu: a real PopupMenuButton that actually opens.
           PopupMenuButton<String>(
             tooltip: 'Menu',
@@ -1223,11 +1206,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             ),
             onSelected: _onMenuSelected,
             itemBuilder: (_) => [
-              if (onProfileTap != null)
-                const PopupMenuItem(
-                  value: 'profile',
-                  child: _MenuItem(icon: Icons.person_outline_rounded, label: 'My Profile'),
-                ),
               const PopupMenuItem(
                 value: 'refresh',
                 child: _MenuItem(icon: Icons.refresh, label: 'Refresh'),
@@ -1251,8 +1229,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
 
   void _onMenuSelected(String value) {
     switch (value) {
-      case 'profile':
-        onProfileTap?.call();
       case 'refresh':
         onRefresh?.call();
       case 'notifications':
@@ -1347,35 +1323,6 @@ class _HeaderAction extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AvatarDot extends StatelessWidget {
-  const _AvatarDot({required this.name, required this.isDark});
-
-  final String name;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'E';
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isDark ? Colors.white : const Color(0xFF171717),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: isDark ? const Color(0xFF171717) : Colors.white,
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
         ),
       ),
     );

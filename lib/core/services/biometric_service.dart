@@ -26,9 +26,13 @@ class BiometricService {
 
   bool _isBiometricEnabled = false;
   bool _lockOnResume = true;
+  bool _isAuthenticating = false;
+  DateTime? _lastAuthSuccessTime;
 
   bool get isBiometricEnabled => _isBiometricEnabled;
   bool get lockOnResume => _lockOnResume;
+  bool get isAuthenticating => _isAuthenticating;
+  DateTime? get lastAuthSuccessTime => _lastAuthSuccessTime;
 
   Future<void> init() async {
     try {
@@ -67,6 +71,14 @@ class BiometricService {
   Future<BiometricAuthResult> authenticateDetailed({
     String reason = 'Authenticate to access LeadX CRM',
   }) async {
+    if (_isAuthenticating) {
+      return const BiometricAuthResult(
+        success: false,
+        errorMessage: 'Authentication is already in progress.',
+      );
+    }
+
+    _isAuthenticating = true;
     try {
       final can = await canAuthenticate();
       if (!can) {
@@ -79,8 +91,12 @@ class BiometricService {
       final authenticated = await _auth.authenticate(
         localizedReason: reason,
         biometricOnly: false,
-        persistAcrossBackgrounding: true,
+        persistAcrossBackgrounding: false,
       );
+
+      if (authenticated) {
+        _lastAuthSuccessTime = DateTime.now();
+      }
 
       return BiometricAuthResult(
         success: authenticated,
@@ -103,6 +119,8 @@ class BiometricService {
         success: false,
         errorMessage: 'Authentication error: $e',
       );
+    } finally {
+      _isAuthenticating = false;
     }
   }
 
