@@ -52,18 +52,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   static const _cardVisibilityPrefKey = 'dashboard_card_visibility_v1';
 
-  static const _availableCards = [
-    ('orders_count', 'Total orders'),
-    ('sales_value', 'Sales / closing value'),
-    ('verified_revenue', 'Verified revenue'),
-    ('customers_count', 'Customers'),
-    ('active_subscriptions', 'Active subscriptions'),
-    ('pending_payments', 'Pending payments'),
-    ('expiring_subscriptions', 'Expiring subscriptions'),
-    ('follow_ups', 'Follow-ups'),
-    ('monthly_performance', 'Monthly performance'),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -161,22 +149,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (confirm == true) auth.logout();
   }
 
-  /// Persists the current [_cardVisibility] map so the chosen layout survives
-  /// a reload. Stores the hidden keys; the loader treats unlisted keys as
-  /// visible, so newly-added cards default to on without a schema bump.
-  Future<void> _saveCardVisibility() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final hidden = _cardVisibility.entries
-          .where((e) => !e.value)
-          .map((e) => e.key)
-          .toList();
-      await prefs.setStringList(_cardVisibilityPrefKey, hidden);
-    } catch (_) {
-      // Best-effort; a failed write just means the layout won't persist.
-    }
-  }
-
   /// Opens a real notifications panel backed by the `employee/notifications`
   /// endpoint (the bell previously just popped a snackbar with the newest
   /// item). The list loads the full unread set, supports per-item and
@@ -194,166 +166,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         services: services,
         initialUnread: _data?.recentNotifications.where((n) => !n.isRead).length ?? 0,
       ),
-    );
-  }
-
-  void _showCustomizeCardsDialog() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            return Dialog(
-              backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppColors.radiusLg),
-                side: BorderSide(
-                  color: isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5),
-                ),
-              ),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Dashboard cards',
-                            style: TextStyle(
-                              fontFamily: AppTypography.fontFamily,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : const Color(0xFF171717),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => Navigator.of(ctx).pop(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Choose which cards to show on your sales dashboard.',
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
-                        color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            for (final card in _availableCards)
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF262626) : const Color(0xFFFAFAFA),
-                                  borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                                  border: Border.all(
-                                    color: isDark ? const Color(0xFF383838) : const Color(0xFFF0F0F0),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        card.$2,
-                                        style: TextStyle(
-                                          fontFamily: AppTypography.fontFamily,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          color: isDark ? Colors.white : const Color(0xFF171717),
-                                        ),
-                                      ),
-                                    ),
-                                    Checkbox(
-                                      value: _cardVisibility[card.$1] ?? true,
-                                      activeColor: isDark ? AppColors.brandDark : AppColors.brand,
-                                      onChanged: (val) {
-                                        setModalState(() => _cardVisibility[card.$1] = val ?? true);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            setModalState(() {
-                              for (final card in _availableCards) {
-                                _cardVisibility[card.$1] = true;
-                              }
-                            });
-                          },
-                          child: const Text(
-                            'Reset defaults',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFDC2626),
-                            ),
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            OutlinedButton(
-                              onPressed: () => Navigator.of(ctx).pop(),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: isDark ? Colors.white : const Color(0xFF171717),
-                                side: BorderSide(
-                                  color: isDark ? const Color(0xFF404040) : const Color(0xFFE5E5E5),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('Cancel', style: TextStyle(fontSize: 13)),
-                            ),
-                            const SizedBox(width: 8),
-                            FilledButton(
-                              onPressed: () async {
-                                setState(() {});
-                                await _saveCardVisibility();
-                                if (ctx.mounted) Navigator.of(ctx).pop();
-                              },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: isDark ? AppColors.brandDark : AppColors.brand,
-                                foregroundColor: isDark ? AppColors.brand : Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('Save', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -432,30 +244,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Header controls: customize + scope ───────────────────
-            Row(
-              children: [
-                _QuietButton(
-                  isDark: isDark,
-                  icon: Icons.tune_rounded,
-                  label: 'Customize',
-                  onTap: _showCustomizeCardsDialog,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DataScopeSegmentControl(
-                    selectedView: _view,
-                    onChanged: (next) {
-                      if (next == _view) return;
-                      setState(() {
-                        _view = next;
-                        _teamDenied = false;
-                      });
-                      _load();
-                    },
-                  ),
-                ),
-              ],
+            // ── Header control: data scope ─────────────────────────
+            DataScopeSegmentControl(
+              selectedView: _view,
+              onChanged: (next) {
+                if (next == _view) return;
+                setState(() {
+                  _view = next;
+                  _teamDenied = false;
+                });
+                _load();
+              },
             ),
             const SizedBox(height: 16),
 
@@ -834,61 +633,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ── Small building blocks ───────────────────────────────────────────────────
-
-class _QuietButton extends StatelessWidget {
-  const _QuietButton({
-    required this.isDark,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final bool isDark;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppColors.radiusMd),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF262626) : Colors.white,
-            borderRadius: BorderRadius.circular(AppColors.radiusMd),
-            border: Border.all(
-              color: isDark ? const Color(0xFF404040) : const Color(0xFFD4D4D4),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF404040),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _MetricCard {
   _MetricCard({
