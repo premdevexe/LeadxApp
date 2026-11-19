@@ -142,7 +142,7 @@ class _ExpiringSubscriptionsScreenState
             : null,
         title: NativeBarTitle(
           title: 'Expiring Soon',
-          subtitle: '${_items.length} due in 30d · ${_view == 'team_data' ? 'Team' : 'Mine'}',
+          subtitle: '${_items.length} due in 30d',
           capsule: true,
           icon: const NativeIcon.symbol('clock.badge.exclamationmark', fallback: Icons.hourglass_top_outlined),
         ),
@@ -195,23 +195,8 @@ class _ExpiringSubscriptionsScreenState
                           )
                         : Column(
                             children: [
-                              // ── My Data / Team Data scope (§3) ───────────────────
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                                child: DataScopeSegmentControl(
-                                  selectedView: _view,
-                                  onChanged: (next) {
-                                    if (next == _view) return;
-                                    setState(() {
-                                      _view = next;
-                                      _page = 1;
-                                    });
-                                    _load();
-                                  },
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                                 child: LeadGlassSearchField(
                                   placeholder: 'Search expiring plan or customer…',
                                   onChanged: (q) => setState(() => _searchQuery = q),

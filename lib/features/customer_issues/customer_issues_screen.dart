@@ -228,18 +228,18 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: StatCard(
-                                      title: 'Fixed',
+                                      title: 'Resolved',
                                       value: '${_issues.where((i) => i.status.toLowerCase() == 'fixed').length}',
-                                      badge: 'Resolved',
+                                      badge: 'Fixed',
                                       badgeType: 'success',
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: StatCard(
-                                      title: 'Facing',
+                                      title: 'Active',
                                       value: '${_issues.where((i) => i.status.toLowerCase() != 'fixed').length}',
-                                      badge: 'Active',
+                                      badge: 'Pending',
                                       badgeType: 'warning',
                                     ),
                                   ),
@@ -429,13 +429,14 @@ class _IssueCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fixed = issue.status == 'fixed';
+    final isDark = cs.brightness == Brightness.dark;
+    final fixed = issue.status.toLowerCase() == 'fixed';
     return NativeContextMenu(
       borderRadius: BorderRadius.circular(14),
       items: [
         if (!fixed)
           NativeMenuItem(
-            title: 'Mark as Fixed',
+            title: 'Mark as Resolved',
             icon: const NativeIcon.symbol('checkmark.circle', fallback: Icons.check_circle_outline),
             onSelected: onMarkFixed,
           ),
@@ -461,40 +462,96 @@ class _IssueCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                    child: Text(issue.issueTitle,
-                        style: AppTypography.cardTitle
-                            .copyWith(fontWeight: FontWeight.w700, color: cs.onSurface),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis)),
+                  child: Text(
+                    issue.issueTitle,
+                    style: AppTypography.cardTitle.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 const SizedBox(width: 8),
-                StatusChip(issue.status,
-                    color: fixed
-                        ? StatusPalette.success(cs)
-                        : StatusPalette.warning(cs)),
+                StatusChip(
+                  fixed ? 'Resolved' : 'Active',
+                  color: fixed
+                      ? StatusPalette.success(cs)
+                      : StatusPalette.warning(cs),
+                ),
               ],
             ),
             if (issue.issueDescription != null &&
                 issue.issueDescription!.isNotEmpty) ...[
               const SizedBox(height: 4),
-              Text(issue.issueDescription!,
-                  style:
-                      AppTypography.secondary.copyWith(color: cs.onSurfaceVariant)),
+              Text(
+                issue.issueDescription!,
+                style: AppTypography.secondary.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
             ],
             const SizedBox(height: 6),
             Text(
-                '${issue.customerName ?? 'Customer'} · ${Fmt.date(issue.issueDate)}',
-                style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant)),
-            const SizedBox(height: 8),
-            if (!fixed)
-              FilledButton.tonal(
-                onPressed: onMarkFixed,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 42),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+              '${issue.customerName ?? 'Customer'} · ${Fmt.date(issue.issueDate)}',
+              style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
+            ),
+            if (!fixed) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFBBF7D0),
+                    width: 1,
+                  ),
                 ),
-                child: const Text('Mark fixed'),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 18,
+                      color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Mark as Resolved',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534),
+                        ),
+                      ),
+                    ),
+                    Material(
+                      color: isDark ? const Color(0xFF22C55E) : const Color(0xFF16A34A),
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        onTap: onMarkFixed,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            'Resolve',
+                            style: TextStyle(
+                              fontFamily: AppTypography.fontFamily,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ],
           ],
         ),
       ),

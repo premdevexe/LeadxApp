@@ -139,23 +139,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
     final content = Column(
       children: [
-        // ── My Data / Team Data scope (§3) ───────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: DataScopeSegmentControl(
-            selectedView: _view,
-            onChanged: (next) {
-              if (next == _view) return;
-              setState(() {
-                _view = next;
-                _page = 1;
-              });
-              _load();
-            },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
           child: LeadGlassSearchField(
             placeholder: 'Search reference, method, or order…',
             onChanged: (q) => setState(() => _searchQuery = q),
@@ -361,7 +346,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             : null,
         title: NativeBarTitle(
           title: 'Payments',
-          subtitle: '${_items.length} records · ${_view == 'team_data' ? 'Team' : 'Mine'}',
+          subtitle: '${_items.length} records',
           capsule: true,
           icon: const NativeIcon.symbol('creditcard.fill', fallback: Icons.payments),
         ),

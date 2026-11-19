@@ -1065,6 +1065,7 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
     this.onMenuTap,
     this.onRefresh,
     this.onNotifications,
+    this.onProfileTap,
     this.onLogout,
   });
 
@@ -1077,6 +1078,7 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onMenuTap;
   final VoidCallback? onRefresh;
   final VoidCallback? onNotifications;
+  final VoidCallback? onProfileTap;
   final VoidCallback? onLogout;
 
   @override
@@ -1187,20 +1189,6 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             const SizedBox(width: 8),
             _RoleChip(label: 'Employee', isDark: isDark),
           ],
-          if (teamCode != null && teamCode!.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            // The team chip is the flex part of the row: on a narrow screen
-            // it squeezes and ellipsizes instead of pushing the actions
-            // (bell / avatar / menu) off the edge.
-            Flexible(
-              child: _RoleChip(
-                label: 'Team $teamCode',
-                isDark: isDark,
-                quiet: !wide,
-                ellipsize: true,
-              ),
-            ),
-          ],
           const Spacer(),
           _HeaderAction(
             isDark: isDark,
@@ -1209,7 +1197,20 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             badge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : '$unreadCount') : null,
           ),
           const SizedBox(width: 8),
-          _AvatarDot(name: employeeName, isDark: isDark),
+          Material(
+            type: MaterialType.transparency,
+            child: Tooltip(
+              message: 'My Profile',
+              child: InkWell(
+                onTap: onProfileTap,
+                borderRadius: BorderRadius.circular(16),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: _AvatarDot(name: employeeName, isDark: isDark),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(width: 8),
           // The menu: a real PopupMenuButton that actually opens.
           PopupMenuButton<String>(
@@ -1222,6 +1223,11 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             ),
             onSelected: _onMenuSelected,
             itemBuilder: (_) => [
+              if (onProfileTap != null)
+                const PopupMenuItem(
+                  value: 'profile',
+                  child: _MenuItem(icon: Icons.person_outline_rounded, label: 'My Profile'),
+                ),
               const PopupMenuItem(
                 value: 'refresh',
                 child: _MenuItem(icon: Icons.refresh, label: 'Refresh'),
@@ -1245,6 +1251,8 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
 
   void _onMenuSelected(String value) {
     switch (value) {
+      case 'profile':
+        onProfileTap?.call();
       case 'refresh':
         onRefresh?.call();
       case 'notifications':
@@ -1260,30 +1268,18 @@ class _RoleChip extends StatelessWidget {
   const _RoleChip({
     required this.label,
     required this.isDark,
-    this.quiet = false,
-    this.ellipsize = false,
   });
 
   final String label;
   final bool isDark;
-  final bool quiet;
-
-  /// When true the chip fills its parent's width (inside a [Flexible]) and
-  /// ellipsizes the label — used on narrow screens so the team code never
-  /// pushes the header actions off the edge.
-  final bool ellipsize;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: ellipsize ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
         borderRadius: BorderRadius.circular(4),
-        border: quiet
-            ? Border.all(color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5), width: 1)
-            : null,
       ),
       child: Text(
         label,

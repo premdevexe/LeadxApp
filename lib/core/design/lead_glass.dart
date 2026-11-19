@@ -281,15 +281,29 @@ class LeadGlassSearchField extends StatefulWidget {
 
 class _LeadGlassSearchFieldState extends State<LeadGlassSearchField> {
   late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_handleFocusChange);
+  }
+
+  void _handleFocusChange() {
+    if (mounted) {
+      setState(() {
+        _isFocused = _focusNode.hasFocus;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -298,42 +312,76 @@ class _LeadGlassSearchFieldState extends State<LeadGlassSearchField> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final h = widget.height;
-    final field = TextField(
-      controller: _controller,
-      onChanged: widget.onChanged,
-      onSubmitted: widget.onSubmitted,
-      autofocus: widget.autofocus,
-      textInputAction: TextInputAction.search,
-      style: AppTypography.body.copyWith(color: cs.onSurface),
-      decoration: InputDecoration(
-        hintText: widget.placeholder,
-        prefixIcon: Icon(Icons.search, size: 20, color: cs.onSurfaceVariant),
-        contentPadding: EdgeInsets.zero,
-        isDense: true,
-        border: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        disabledBorder: InputBorder.none,
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(h / 2),
-          borderSide: BorderSide(
-              color: cs.primary.withValues(alpha: 0.6), width: 1.2),
-        ),
-        hintStyle: AppTypography.body.copyWith(
-          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-        ),
-      ),
-    );
 
     return Container(
       height: h,
       decoration: BoxDecoration(
         color: cs.surface,
         borderRadius: BorderRadius.circular(h / 2),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+        border: Border.all(
+          color: _isFocused
+              ? cs.primary.withValues(alpha: 0.8)
+              : cs.outlineVariant.withValues(alpha: 0.5),
+          width: _isFocused ? 1.4 : 1.0,
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: field,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search,
+            size: 20,
+            color: _isFocused ? cs.primary : cs.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              onChanged: (val) {
+                widget.onChanged(val);
+                setState(() {});
+              },
+              onSubmitted: widget.onSubmitted,
+              autofocus: widget.autofocus,
+              textInputAction: TextInputAction.search,
+              style: AppTypography.body.copyWith(color: cs.onSurface),
+              decoration: InputDecoration(
+                hintText: widget.placeholder,
+                hintStyle: AppTypography.body.copyWith(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                floatingLabelBehavior: FloatingLabelBehavior.never,
+                errorText: null,
+                errorStyle: const TextStyle(fontSize: 0, height: 0),
+                helperText: null,
+                helperStyle: const TextStyle(fontSize: 0, height: 0),
+              ),
+            ),
+          ),
+          if (_controller.text.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                _controller.clear();
+                widget.onChanged('');
+                setState(() {});
+              },
+              child: Icon(
+                Icons.cancel,
+                size: 16,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+        ],
       ),
     );
   }

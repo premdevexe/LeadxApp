@@ -25,8 +25,6 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
   bool _loading = true;
   String? _error;
   bool _forbidden = false;
-  String _view = 'my_data';
-  bool _teamDenied = false;
 
   @override
   void initState() {
@@ -127,57 +125,6 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
           padding: EdgeInsets.fromLTRB(
               16, MediaQuery.paddingOf(context).top + 12, 16, 96),
           children: [
-            // ── My Data / Team Data scope (§3) ───────────────────
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: DataScopeSegmentControl(
-                selectedView: _view,
-                onChanged: (next) {
-                  if (next == _view) return;
-                  if (next == 'team_data' && !auth.hasTeamDataAccess) {
-                    setState(() {
-                      _view = 'my_data';
-                      _teamDenied = true;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Team Data requires admin grant. Showing My Data.')),
-                    );
-                    return;
-                  }
-                  setState(() {
-                    _view = next;
-                    _teamDenied = false;
-                  });
-                  _load();
-                },
-              ),
-            ),
-            if (_teamDenied) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: cs.brightness == Brightness.dark ? 0.08 : 0.04),
-                  borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                  border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 15, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Team reports require an admin grant — showing your data',
-                        style: AppTypography.caption.copyWith(
-                          fontSize: 12,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
             if (d.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 48),

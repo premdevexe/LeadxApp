@@ -13,6 +13,7 @@ import '../../shared/models/order.dart' show Order;
 import '../../shared/models/subscription.dart' show Subscription;
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
+import '../profile/profile_screen.dart';
 
 /// The employee dashboard: summary figures, metric cards, recent orders,
 /// follow-ups, expiring subscriptions and a 6-month sales trajectory.
@@ -148,7 +149,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final isDark = cs.brightness == Brightness.dark;
     final auth = context.watch<AuthController>();
     final employeeName = auth.me?.data.name ?? 'Employee';
-    final teamCode = auth.me?.data.team?.teamCode ?? '';
     final unreadCount = _data?.recentNotifications.where((n) => !n.isRead).length ?? 0;
     final notifications = _data?.recentNotifications ?? const <m.DashboardRecentNotification>[];
 
@@ -159,7 +159,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
       child: LeadxNavHeader(
         employeeName: employeeName,
-        teamCode: teamCode.isEmpty ? null : teamCode,
         unreadCount: unreadCount,
         // Opens the shell's navigation drawer when one is present (the
         // dashboard is a tab under HomeShell).
@@ -168,6 +167,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             : null,
         onRefresh: _load,
         onNotifications: notifications.isEmpty ? null : _showNotificationsPanel,
+        onProfileTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+          );
+        },
         onLogout: () => _confirmLogout(context, auth),
       ),
     );

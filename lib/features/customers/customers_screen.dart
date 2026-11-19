@@ -153,23 +153,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   )
                 : Column(
                     children: [
-                      // ── My Data / Team Data scope (§3) ───────────────────
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                        child: DataScopeSegmentControl(
-                          selectedView: _view,
-                          onChanged: (next) {
-                            if (next == _view) return;
-                            setState(() {
-                              _view = next;
-                              _page = 1;
-                            });
-                            _load();
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                         child: LeadGlassSearchField(
                           placeholder: 'Search customer name, phone, email…',
                           onChanged: (q) => setState(() => _searchQuery = q),
@@ -303,7 +288,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       body: NativeNavigationBar(
         title: NativeBarTitle(
           title: 'Customers',
-          subtitle: '${_items.length} accounts · ${_view == 'team_data' ? 'Team' : 'Mine'}',
+          subtitle: '${_items.length} accounts',
           capsule: true,
           icon: const NativeIcon.symbol('person.2.fill', fallback: Icons.people),
         ),

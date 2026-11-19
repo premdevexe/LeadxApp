@@ -156,7 +156,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
             : null,
         title: NativeBarTitle(
           title: 'Subscriptions',
-          subtitle: '${_items.length} accounts · ${_view == 'team_data' ? 'Team' : 'Mine'}',
+          subtitle: '${_items.length} accounts',
           capsule: true,
           icon: const NativeIcon.symbol('arrow.triangle.2.circlepath', fallback: Icons.repeat),
         ),
@@ -213,23 +213,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
         ],
         child: Column(
           children: [
-                  // ── My Data / Team Data scope (§3) ───────────────────
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: DataScopeSegmentControl(
-                      selectedView: _view,
-                      onChanged: (next) {
-                        if (next == _view) return;
-                        setState(() {
-                          _view = next;
-                          _page = 1;
-                        });
-                        _load();
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                     child: LeadGlassSearchField(
                       placeholder: 'Search plan, customer, or order…',
                       onChanged: (q) => setState(() => _searchQuery = q),
