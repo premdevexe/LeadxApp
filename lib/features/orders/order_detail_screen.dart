@@ -291,17 +291,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     } else if (order == null) {
       bodyContent = const EmptyState(title: 'No order data');
     } else {
-      bodyContent = Builder(
-        builder: (context) {
-          final pad = MediaQuery.paddingOf(context);
-          final received = order.amountReceived ?? 0.0;
-          final due = (order.closingValue - received).clamp(0.0, double.infinity);
+      final received = order.amountReceived ?? 0.0;
+      final due = (order.closingValue - received).clamp(0.0, double.infinity);
 
-          return RefreshIndicator(
-            onRefresh: _load,
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(16, pad.top + 12, 16, 32),
-              children: [
+      bodyContent = RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
                 if (viewOnly)
                   AppCard.surface(
                     context,
@@ -700,8 +697,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ],
             ),
           );
-        },
-      );
     }
 
     return Scaffold(
@@ -735,15 +730,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               },
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: bodyContent,
-            );
-          },
-        ),
+        child: bodyContent,
       ),
     );
   }

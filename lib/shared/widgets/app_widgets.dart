@@ -19,7 +19,7 @@ class AppCard {
   static BoxDecoration decorationOf(
     BuildContext context, {
     Color? color,
-    double radius = AppColors.radiusMd,
+    double radius = AppColors.radiusLg,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
@@ -28,23 +28,22 @@ class AppCard {
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(
         color: isDark
-            ? cs.onSurface.withValues(alpha: 0.08)
-            : cs.outlineVariant.withValues(alpha: 0.45),
+            ? cs.outlineVariant.withValues(alpha: 0.3)
+            : cs.outlineVariant.withValues(alpha: 0.5),
         width: 1,
       ),
       boxShadow: isDark
           ? const [
               BoxShadow(
-                color: Colors.black,
-                blurRadius: 10,
-                offset: Offset(0, 2),
-                spreadRadius: -4,
+                color: Color(0x1F000000),
+                blurRadius: 4,
+                offset: Offset(0, 1),
               )
             ]
           : const [
               BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 2,
+                color: Color(0x08000000),
+                blurRadius: 3,
                 offset: Offset(0, 1),
               ),
             ],
@@ -59,7 +58,7 @@ class AppCard {
     EdgeInsetsGeometry margin = EdgeInsets.zero,
     Color? color,
     VoidCallback? onTap,
-    double radius = AppColors.radiusMd,
+    double radius = AppColors.radiusLg,
   }) {
     final shape = BorderRadius.circular(radius);
     final ink = Material(
@@ -1066,7 +1065,12 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
     final wide = MediaQuery.sizeOf(context).width >= 600;
 
     return Container(
-      color: isDark ? const Color(0xFF171717) : Colors.white,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF171717) : Colors.white,
+        border: Border(
+          bottom: BorderSide(color: hairline, width: 1),
+        ),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [

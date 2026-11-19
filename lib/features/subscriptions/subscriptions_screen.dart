@@ -211,13 +211,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
               ],
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: Column(
-                children: [
+        child: Column(
+          children: [
                   // ── My Data / Team Data scope (§3) ───────────────────
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -385,12 +380,9 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                             ),
                     ),
             ),
-            ],
+              ],
+            ),
           ),
         );
-      },
-    ),
-  ),
-);
-}
-}
+      }
+    }

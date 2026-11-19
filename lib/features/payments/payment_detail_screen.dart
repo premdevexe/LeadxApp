@@ -161,14 +161,11 @@ class _PaymentDetailScreenState extends State<PaymentDetailScreen> {
             onPressed: _load,
           ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return RefreshIndicator(
-              onRefresh: _load,
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(16, pad.top + 12, 16, pad.bottom + 24),
-                children: [
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
             AppCard.surface(
               context,
               padding: const EdgeInsets.all(20),
@@ -297,11 +294,9 @@ class _PaymentDetailScreenState extends State<PaymentDetailScreen> {
             ),
           ],
         ),
-      );
-    },
-  ),
-),
-);
+      ),
+    ),
+  );
 }
 
   Widget _row(BuildContext context, String label, String value, {bool tabular = false}) {

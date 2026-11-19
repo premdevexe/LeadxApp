@@ -336,17 +336,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onPressed: _sync,
           ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return RefreshIndicator(
-              onRefresh: () async {
-                await _load();
-                await _loadGoogle();
-              },
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(16, pad.top + 12, 16, 24),
-                children: [
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _load();
+            await _loadGoogle();
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
                   // 36-Hour Advance Expiry Notification Banner (mirrors calendar.blade.php)
                   Container(
                     margin: const EdgeInsets.only(bottom: 14),
@@ -506,12 +503,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
               const SizedBox(height: 24),
             ],
           ),
-        );
-      },
-    ),
-  ),
-);
-}
+        ),
+      ),
+    );
+  }
 
   /// Spec §10: personal Google Calendar OAuth card — connection status,
   /// connect (external-browser OAuth) or disconnect (confirmed, destructive).

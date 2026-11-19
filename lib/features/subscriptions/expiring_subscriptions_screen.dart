@@ -182,12 +182,9 @@ class _ExpiringSubscriptionsScreenState
               ],
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            final content = _loading && _items.isEmpty
-                ? const LoadingScreen()
-                : RefreshIndicator(
+        child: _loading && _items.isEmpty
+            ? const LoadingScreen()
+            : RefreshIndicator(
                     onRefresh: _load,
                     child: _error != null && _items.isEmpty
                         ? ListView(
@@ -402,13 +399,7 @@ class _ExpiringSubscriptionsScreenState
                         ),
                       ],
                     ),
-            );
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+            ),
       ),
     );
   }

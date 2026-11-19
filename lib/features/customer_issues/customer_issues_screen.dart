@@ -307,15 +307,7 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
             onPressed: _load,
           ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+        child: content,
       ),
     );
   }

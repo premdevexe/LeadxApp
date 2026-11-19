@@ -316,15 +316,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onPressed: _markAll,
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+        child: content,
       ),
     );
   }

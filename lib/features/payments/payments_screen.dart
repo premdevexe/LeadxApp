@@ -196,6 +196,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                               : 'Payments recorded from customer orders appear here.',
                           tile: (context, p, i) {
                       final cs = Theme.of(context).colorScheme;
+                      final isDark = cs.brightness == Brightness.dark;
                       final accent = p.verified
                           ? StatusPalette.success(cs)
                           : StatusPalette.warning(cs);
@@ -232,8 +233,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         child: AppCard.surface(
                           context,
                           margin: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 5),
-                          padding: const EdgeInsets.all(12),
+                              horizontal: 14, vertical: 4),
+                          padding: const EdgeInsets.all(14),
+                          radius: AppColors.radiusLg,
                           onTap: () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
@@ -247,47 +249,95 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                             children: [
                               Row(
                                 children: [
-                                  CircleAvatar(
-                                    radius: 16,
-                                    backgroundColor:
-                                        accent.withValues(alpha: 0.15),
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                     child: Icon(
                                       p.verified
-                                          ? Icons.check
-                                          : Icons.hourglass_empty,
+                                          ? Icons.check_circle_outline_rounded
+                                          : Icons.schedule_rounded,
                                       color: accent,
                                       size: 16,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  // The payment row's own currency *code* is
-                                  // resolved through the admin symbol catalogue.
                                   Expanded(
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        Fmt.moneyFor(p.amount, code: p.currency),
-                                        style: AppTypography.statNumericSmall.copyWith(color: cs.onSurface),
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          Fmt.moneyFor(p.amount, code: p.currency),
+                                          style: AppTypography.statNumericSmall.copyWith(
+                                            color: cs.onSurface,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            fontFeatures: AppTypography.tabularFigures,
+                                          ),
+                                        ),
+                                        Text(
+                                          p.orderNumber != null && p.orderNumber!.isNotEmpty
+                                              ? p.orderNumber!
+                                              : 'Order #${p.orderId}',
+                                          style: TextStyle(
+                                            fontFamily: AppTypography.fontFamily,
+                                            fontSize: 11,
+                                            color: cs.onSurfaceVariant,
+                                            fontWeight: FontWeight.w500,
+                                            fontFeatures: AppTypography.tabularFigures,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   StatusBadge(status: p.paymentStatus, compact: true),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Order #${p.orderId} · ${(p.paymentMethod ?? 'Unknown').toUpperCase()}',
-                                style: AppTypography.body.copyWith(color: cs.onSurface),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                Fmt.dateTime(p.paymentDate ?? p.createdAt),
-                                style:
-                                    AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.only(top: 8),
+                                decoration: BoxDecoration(
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: cs.outlineVariant.withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF262626) : const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        (p.paymentMethod ?? 'Unknown').toUpperCase(),
+                                        style: TextStyle(
+                                          fontFamily: AppTypography.fontFamily,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: cs.onSurfaceVariant,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Icon(Icons.calendar_today_outlined, size: 11, color: cs.onSurfaceVariant),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      Fmt.dateTime(p.paymentDate ?? p.createdAt),
+                                      style: AppTypography.caption.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -361,15 +411,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               ],
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+        child: content,
       ),
     );
   }

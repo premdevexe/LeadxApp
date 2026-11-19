@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/design/native_chrome.dart';
 
+import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
 import '../../core/design/lead_glass.dart';
 import '../../core/errors/api_exception.dart';
@@ -282,15 +283,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ],
             ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+        child: content,
       ),
     );
   }
@@ -348,8 +341,9 @@ class _OrderCard extends StatelessWidget {
       ],
       child: AppCard.surface(
         context,
-        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        padding: const EdgeInsets.all(14),
+        radius: AppColors.radiusLg,
         onTap: onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,10 +353,13 @@ class _OrderCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     order.orderNumber,
-                    style: AppTypography.cardTitle.copyWith(
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      fontFamily: 'Courier',
+                      letterSpacing: 0.2,
                       color: cs.onSurface,
+                      fontFeatures: AppTypography.tabularFigures,
                     ),
                   ),
                 ),
@@ -370,13 +367,43 @@ class _OrderCard extends StatelessWidget {
                 StatusBadge(status: order.orderStatus, compact: true),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              order.customerName,
-              style: AppTypography.body.copyWith(
-                color: cs.onSurface,
-                fontWeight: FontWeight.w500,
-              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    order.customerName,
+                    style: AppTypography.cardTitle.copyWith(
+                      color: cs.onSurface,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (order.customerPhone != null && order.customerPhone!.isNotEmpty)
+                  InkWell(
+                    onTap: () => _call(order.customerPhone!),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.phone_outlined, size: 12, color: cs.primary),
+                          const SizedBox(width: 3),
+                          Text(
+                            order.customerPhone!,
+                            style: AppTypography.caption.copyWith(
+                              color: cs.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
             if (isTeamView &&
                 (order.assignedEmployeeName != null ||
@@ -384,33 +411,54 @@ class _OrderCard extends StatelessWidget {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Icon(Icons.person_outline, size: 13, color: cs.onSurfaceVariant),
+                  Icon(Icons.person_outline, size: 12, color: cs.onSurfaceVariant),
                   const SizedBox(width: 4),
                   Text(
                     order.assignedEmployeeName ??
                         'Employee #${order.assignedEmployeeId}',
                     style: AppTypography.caption.copyWith(
                       color: cs.onSurfaceVariant,
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ],
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  Fmt.money(order.closingValue),
-                  style: AppTypography.statNumericSmall.copyWith(color: cs.onSurface),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.only(top: 8),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: cs.outlineVariant.withValues(alpha: 0.25),
+                  ),
                 ),
-                const SizedBox(width: 10),
-                StatusBadge(status: order.paymentStatus, compact: true),
-                const Spacer(),
-                Text(
-                  Fmt.date(order.createdAt),
-                  style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
-                ),
-              ],
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    Fmt.money(order.closingValue),
+                    style: AppTypography.statNumericSmall.copyWith(
+                      color: cs.onSurface,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: AppTypography.tabularFigures,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  StatusBadge(status: order.paymentStatus, compact: true),
+                  const Spacer(),
+                  Icon(Icons.calendar_today_outlined, size: 11, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text(
+                    Fmt.date(order.createdAt),
+                    style: AppTypography.caption.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

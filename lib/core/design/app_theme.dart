@@ -223,10 +223,34 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: cs.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: cs.primaryContainer,
-        labelTextStyle: WidgetStateProperty.all(
-          AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
-        ),
+        indicatorColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF1F5F9),
+        indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppTypography.caption.copyWith(
+              color: isDark ? Colors.white : AppColors.brand,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            );
+          }
+          return AppTypography.caption.copyWith(
+            color: cs.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+            fontSize: 11,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return IconThemeData(
+              color: isDark ? Colors.white : AppColors.brand,
+              size: 20,
+            );
+          }
+          return IconThemeData(
+            color: cs.onSurfaceVariant,
+            size: 20,
+          );
+        }),
       ),
 
       drawerTheme: DrawerThemeData(

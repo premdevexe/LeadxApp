@@ -336,15 +336,7 @@ class _FollowUpsScreenState extends State<FollowUpsScreen> {
             ),
           ),
         ],
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return Padding(
-              padding: EdgeInsets.only(top: pad.top),
-              child: content,
-            );
-          },
-        ),
+        child: content,
       ),
     );
   }

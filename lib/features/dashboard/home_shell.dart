@@ -50,6 +50,7 @@ class _HomeShellState extends State<HomeShell> {
     final teamName = auth.me?.data.team?.teamName;
     final email = auth.me?.data.email ?? auth.me?.data.username ?? '';
 
+    final cs = Theme.of(context).colorScheme;
     final menu = Drawer(
       child: _MenuBody(
         employeeName: employeeName,
@@ -64,36 +65,58 @@ class _HomeShellState extends State<HomeShell> {
       drawer: menu,
       endDrawer: menu,
       body: IndexedStack(index: _index, children: screens),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: cs.surface,
+          border: Border(
+            top: BorderSide(
+              color: cs.outlineVariant.withValues(alpha: 0.35),
+              width: 1,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Orders',
+        ),
+        child: NavigationBar(
+          height: 62,
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          indicatorColor: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF2A2A2A)
+              : const Color(0xFFF1F5F9),
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.task_alt_outlined),
-            selectedIcon: Icon(Icons.task_alt),
-            label: 'Follow-ups',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.notifications_none),
-            selectedIcon: Icon(Icons.notifications),
-            label: 'Notifications',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: _index,
+          onDestinationSelected: (i) => setState(() => _index = i),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined, size: 20),
+              selectedIcon: Icon(Icons.dashboard_rounded, size: 20),
+              label: 'Dashboard',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined, size: 20),
+              selectedIcon: Icon(Icons.receipt_long_rounded, size: 20),
+              label: 'Orders',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.task_alt_outlined, size: 20),
+              selectedIcon: Icon(Icons.task_alt_rounded, size: 20),
+              label: 'Follow-ups',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.notifications_none_rounded, size: 20),
+              selectedIcon: Icon(Icons.notifications_rounded, size: 20),
+              label: 'Notifications',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded, size: 20),
+              selectedIcon: Icon(Icons.person_rounded, size: 20),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }

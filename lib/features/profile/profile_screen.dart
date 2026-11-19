@@ -229,12 +229,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           capsule: true,
           icon: NativeIcon.symbol('person.crop.circle', fallback: Icons.account_circle),
         ),
-        child: Builder(
-          builder: (context) {
-            final pad = MediaQuery.paddingOf(context);
-            return ListView(
-              padding: EdgeInsets.fromLTRB(16, pad.top + 12, 16, pad.bottom + 24),
-              children: [
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
           if (emp != null) ...[
             // Profile Card matching profile.blade.php
             AppCard.surface(
@@ -529,11 +526,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 24),
         ],
-      );
-    },
-  ),
-),
-);
+      ),
+    ),
+  );
 }
 
   String _currencyLine(BuildContext context) {
