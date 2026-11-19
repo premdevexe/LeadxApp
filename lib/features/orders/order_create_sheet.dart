@@ -300,7 +300,7 @@ class _OrderSheetFormState extends State<_OrderSheetForm> {
           if (_loadingProducts)
             const Padding(
               padding: EdgeInsets.all(12),
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: LeadxFlickrLoading(size: 28)),
             )
           else
             LeadGlass.field(

@@ -1602,7 +1602,7 @@ class _NotificationsPanelState extends State<_NotificationsPanel> {
             Expanded(
               child: _loading
                   ? const Center(
-                      child: CircularProgressIndicator.adaptive())
+                      child: LeadxFlickrLoading(size: 32))
                   : _error != null
                       ? Center(
                           child: Padding(

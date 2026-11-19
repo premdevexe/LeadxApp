@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/design/app_colors.dart';
@@ -255,6 +256,28 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+class LeadxFlickrLoading extends StatelessWidget {
+  const LeadxFlickrLoading({
+    super.key,
+    this.size = 40,
+    this.leftDotColor = const Color(0xFF0063DC),
+    this.rightDotColor = const Color(0xFFFF0084),
+  });
+
+  final double size;
+  final Color leftDotColor;
+  final Color rightDotColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return LoadingAnimationWidget.flickr(
+      leftDotColor: leftDotColor,
+      rightDotColor: rightDotColor,
+      size: size,
+    );
+  }
+}
+
 class LoadingScreen extends StatelessWidget {
   const LoadingScreen({super.key, this.message = 'Loading…'});
 
@@ -267,8 +290,12 @@ class LoadingScreen extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
+          LoadingAnimationWidget.flickr(
+            leftDotColor: const Color(0xFF0063DC),
+            rightDotColor: const Color(0xFFFF0084),
+            size: 44,
+          ),
+          const SizedBox(height: 20),
           Text(message, style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant)),
         ],
       ),

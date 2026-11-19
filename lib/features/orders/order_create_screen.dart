@@ -4,6 +4,7 @@ import '../../core/errors/api_exception.dart';
 import '../../core/services/app_services.dart';
 import '../../shared/format.dart';
 import '../../shared/models/order.dart';
+import '../../shared/widgets/app_widgets.dart';
 
 /// Supported subscription durations mirroring `\App\Models\SalesOrder::DURATIONS`.
 const Map<String, String> kOrderDurations = {
@@ -476,7 +477,7 @@ class _OrderCreateScreenState extends State<OrderCreateScreen> {
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(12),
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: LeadxFlickrLoading(size: 28),
                       ),
                     )
                   else

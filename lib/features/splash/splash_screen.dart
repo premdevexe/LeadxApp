@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/design/app_colors.dart';
@@ -116,14 +117,11 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
             const Spacer(flex: 3),
-            // Indeterminate loading bar — neutral, no colored tints.
-            const SizedBox(
-              width: 52,
-              height: 2,
-              child: ClipRRect(
-                borderRadius: BorderRadius.all(Radius.circular(2)),
-                child: LinearProgressIndicator(),
-              ),
+            // Flickr loading animation:
+            LoadingAnimationWidget.flickr(
+              leftDotColor: const Color(0xFF0063DC),
+              rightDotColor: const Color(0xFFFF0084),
+              size: 36,
             ),
             const SizedBox(height: 36),
           ],
