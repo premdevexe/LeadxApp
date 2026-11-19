@@ -64,48 +64,64 @@ class ReverbService {
     if (_disposed) return;
     _reconnectTimer?.cancel();
 
-    final host = await ApiConfig.reverbHost();
-    final port = await ApiConfig.reverbPort();
-    final baseUrl = await ApiConfig.baseUrl();
-    final isSecure = baseUrl.startsWith('https');
-    final scheme = isSecure ? 'wss' : 'ws';
-    final portPart = (isSecure && port == 443) || (!isSecure && port == 80) ? '' : ':$port';
-    final uri = Uri.parse('$scheme://$host$portPart/app');
+    try {
+      final host = await ApiConfig.reverbHost();
+      final port = await ApiConfig.reverbPort();
+      final baseUrl = await ApiConfig.baseUrl();
+      final isSecure = baseUrl.startsWith('https');
+      final scheme = isSecure ? 'wss' : 'ws';
+      final portPart = (isSecure && port == 443) || (!isSecure && port == 80) ? '' : ':$port';
+      final key = Uri.encodeComponent(ApiConfig.defaultReverbKey);
+      final uri = Uri.parse(
+          '$scheme://$host$portPart/app/$key?protocol=7&client=js&version=8.4.0-reverb&flash=false');
 
-    final channel = WebSocketChannel.connect(uri);
-    _channel = channel;
+      final channel = WebSocketChannel.connect(uri);
+      _channel = channel;
 
-    final socketIdC = Completer<String>();
-    final subscribedC = Completer<void>();
-    _socketIdCompleter = socketIdC;
-    _subscribedCompleter = subscribedC;
+      final socketIdC = Completer<String>();
+      final subscribedC = Completer<void>();
+      _socketIdCompleter = socketIdC;
+      _subscribedCompleter = subscribedC;
 
-    _sub = channel.stream.listen(
-      _onData,
-      onError: (_) {},
-      onDone: _handleClosed,
-    );
+      _sub = channel.stream.listen(
+        _onData,
+        onError: (_) {
+          _handleClosed();
+        },
+        onDone: _handleClosed,
+        cancelOnError: true,
+      );
 
-    // 1. Handshake frame (pusher:connected) carries the server socket id.
-    final socketId =
-        await socketIdC.future.timeout(const Duration(seconds: 10));
-    _socketId = socketId;
+      // 1. Handshake frame (pusher:connected) carries the server socket id.
+      final socketId =
+          await socketIdC.future.timeout(const Duration(seconds: 10));
+      _socketId = socketId;
 
-    // 2. Ask the backend (our own Sanctum token) to sign the channel.
-    final auth = await _authorizeChannel(socketId);
+      // 2. Ask the backend (our own Sanctum token) to sign the channel.
+      final auth = await _authorizeChannel(socketId);
 
-    // 3. Subscribe with the signed token.
-    channel.sink.add(json.encode({
-      'event': 'pusher:subscribe',
-      'channel': _fullChannelName,
-      'data': auth,
-    }));
+      // 3. Subscribe with the signed token.
+      channel.sink.add(json.encode({
+        'event': 'pusher:subscribe',
+        'channel': _fullChannelName,
+        'data': auth,
+      }));
 
-    // 4. Wait for confirmation.
-    await subscribedC.future.timeout(const Duration(seconds: 10));
+      // 4. Wait for confirmation.
+      await subscribedC.future.timeout(const Duration(seconds: 10));
 
-    _backoffTicks = 0;
-    onFallbackToPolling?.call(false);
+      _backoffTicks = 0;
+      onFallbackToPolling?.call(false);
+    } catch (_) {
+      _channel?.sink.close();
+      _channel = null;
+      _sub?.cancel();
+      _sub = null;
+      onFallbackToPolling?.call(true);
+      if (_backoffTicks < 3) {
+        _reconnect();
+      }
+    }
   }
 
   void _onData(dynamic raw) {
@@ -176,7 +192,10 @@ class ReverbService {
     _sub?.cancel();
     _sub = null;
     _channel = null;
-    _reconnect();
+    onFallbackToPolling?.call(true);
+    if (_backoffTicks < 3) {
+      _reconnect();
+    }
   }
 
   void _reconnect() {
