@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:veneer/veneer.dart';
+import '../../core/design/native_chrome.dart';
 
 import '../../core/design/app_typography.dart';
 import '../../core/design/lead_glass.dart';
@@ -15,7 +15,7 @@ import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
 import '../search/global_search_screen.dart';
 import '../../core/utils/native_banner_helper.dart';
-import 'order_create_sheet.dart';
+import 'order_create_screen.dart';
 import 'order_detail_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -121,10 +121,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return;
     }
 
-    Future<void> showSheet() => showOrderCreateSheet(context, services);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) showSheet();
-    });
+    final res = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => OrderCreateScreen(services: services),
+      ),
+    );
+    if (res == true && mounted) {
+      _load();
+    }
   }
 
   List<Order> get _filteredOrders {
@@ -210,6 +214,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   : 'Orders assigned to you will appear here.'),
                           tile: (context, o, i) => _OrderCard(
                             order: o,
+                            isTeamView: _view == 'team_data',
                             onTap: () {
                               Navigator.of(context).push(MaterialPageRoute(
                                   builder: (_) => OrderDetailScreen(orderId: o.id)));
@@ -292,10 +297,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
 }
 
 class _OrderCard extends StatelessWidget {
-  const _OrderCard({required this.order, required this.onTap});
+  const _OrderCard({
+    required this.order,
+    required this.onTap,
+    this.isTeamView = false,
+  });
 
   final Order order;
   final VoidCallback onTap;
+  final bool isTeamView;
 
   void _call(String phone) async {
     final uri = Uri.parse('tel:$phone');
@@ -351,6 +361,7 @@ class _OrderCard extends StatelessWidget {
                     order.orderNumber,
                     style: AppTypography.cardTitle.copyWith(
                       fontWeight: FontWeight.w700,
+                      fontFamily: 'Courier',
                       color: cs.onSurface,
                     ),
                   ),
@@ -362,8 +373,29 @@ class _OrderCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               order.customerName,
-              style: AppTypography.body.copyWith(color: cs.onSurface),
+              style: AppTypography.body.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
             ),
+            if (isTeamView &&
+                (order.assignedEmployeeName != null ||
+                    order.assignedEmployeeId != null)) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.person_outline, size: 13, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text(
+                    order.assignedEmployeeName ??
+                        'Employee #${order.assignedEmployeeId}',
+                    style: AppTypography.caption.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               children: [

@@ -1,39 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:veneer/veneer.dart';
+import '../../core/design/native_chrome.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
 import '../../core/design/lead_glass.dart';
 import '../../core/errors/api_exception.dart';
 import '../../core/services/app_services.dart';
-import '../../core/design/theme_controller.dart';
 
-/// Opens the "Schedule follow-up" form.
-///
-/// With the "Liquid Glass" preference on it presents in a native
-/// [showNativeSheet] (real UIKit sheet on iOS 26+; a Flutter replica
-/// elsewhere); with it off the standard Material bottom sheet is used.
-/// The form's fields and call to action are kit Liquid Glass surfaces that
-/// follow the same toggle.
+/// Opens the "Schedule follow-up" form in a standard Material bottom sheet.
 Future<bool?> showFollowUpCreateSheet(
   BuildContext context, {
   int? preselectedCustomerId,
 }) {
-  final useGlass = context.read<ThemeController>().glassEnabled;
-  if (useGlass) {
-    return showNativeSheet<bool>(
-      context: context,
-      detents: const [
-        NativeSheetDetent.fraction(0.65),
-        NativeSheetDetent.large,
-      ],
-      initialDetent: const NativeSheetDetent.fraction(0.65),
-      showGrabber: true,
-      builder: (_) =>
-          FollowUpCreateSheet(preselectedCustomerId: preselectedCustomerId),
-    );
-  }
   return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,

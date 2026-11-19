@@ -4,9 +4,7 @@ import 'package:firebase_core_platform_interface/test.dart' as fbi_test;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 
-import 'package:leadx/core/design/theme_controller.dart';
 import 'package:leadx/core/services/app_services.dart';
 import 'package:leadx/features/orders/order_create_sheet.dart';
 
@@ -47,21 +45,14 @@ void main() {
 
     final services = AppServices();
 
-    // The sheet reads the liquid-glass toggle; force the Material bottom-sheet
-    // path so the drag-handle assertions are deterministic (no glass shaders).
-    final theme = ThemeController()..glassEnabled = false;
-
     await tester.pumpWidget(
-      ChangeNotifierProvider<ThemeController>.value(
-        value: theme,
-        child: MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: Builder(
-                builder: (context) => ElevatedButton(
-                  onPressed: () => showOrderCreateSheet(context, services),
-                  child: const Text('Open new order sheet'),
-                ),
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => showOrderCreateSheet(context, services),
+                child: const Text('Open new order sheet'),
               ),
             ),
           ),

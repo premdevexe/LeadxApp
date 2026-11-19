@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:veneer/veneer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
@@ -13,26 +13,10 @@ import '../../shared/models/order.dart' show Order;
 import '../../shared/models/subscription.dart' show Subscription;
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
-import '../customers/customers_screen.dart';
-import '../follow_ups/follow_up_create_sheet.dart';
-import '../follow_ups/follow_up_detail_screen.dart';
-import '../follow_ups/follow_ups_screen.dart';
-import '../notifications/notifications_screen.dart';
-import '../orders/order_create_sheet.dart';
-import '../orders/order_detail_screen.dart';
-import '../orders/orders_screen.dart';
-import '../payments/payments_screen.dart';
-import '../profile/profile_screen.dart';
-import '../search/global_search_screen.dart';
-import '../subscriptions/expiring_subscriptions_screen.dart';
-import '../subscriptions/subscription_detail_screen.dart';
-import '../subscriptions/subscriptions_screen.dart';
-import 'crm_hub_sheet.dart';
 
-/// The employee dashboard: personalized greeting, profile summary, today's
-/// statistics, revenue/payment summaries, upcoming follow-ups and recent
-/// activity — every figure formatted through the admin currency config.
-/// Faithfully mirrors employee-dashboard-preview.html & dashboard.blade.php.
+/// The employee dashboard: summary figures, metric cards, recent orders,
+/// follow-ups, expiring subscriptions and a 6-month sales trajectory.
+/// Every figure formats through the admin currency config.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -46,11 +30,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _error;
   String _view = 'my_data';
 
-  /// True while the API has denied `view=team_data` (403 or similar) — the
-  /// screen then keeps the My Data data with an unobtrusive notice.
+  /// True while the API has denied `view=team_data` — the screen then keeps
+  /// My Data figures with an unobtrusive notice.
   bool _teamDenied = false;
 
-  /// Customization state for the 9 dashboard metric cards
+  String get _viewScope => _view == 'team_data' ? 'Team aggregate' : 'Individual performance';
+
+  /// Customization state for the metric cards. Persisted to local storage so
+  /// the layout choice survives a reload / app restart.
   final Map<String, bool> _cardVisibility = {
     'orders_count': true,
     'sales_value': true,
@@ -63,22 +50,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'monthly_performance': true,
   };
 
+  static const _cardVisibilityPrefKey = 'dashboard_card_visibility_v1';
+
   static const _availableCards = [
-    ('orders_count', 'My Total Orders'),
-    ('sales_value', 'My Sales / Closing Value'),
-    ('verified_revenue', 'My Verified Revenue'),
-    ('customers_count', 'My Customers'),
-    ('active_subscriptions', 'My Active Subscriptions'),
-    ('pending_payments', 'My Pending Payments'),
-    ('expiring_subscriptions', 'My Expiring Subscriptions'),
-    ('follow_ups', 'My Follow-ups'),
-    ('monthly_performance', 'My Monthly Performance'),
+    ('orders_count', 'Total orders'),
+    ('sales_value', 'Sales / closing value'),
+    ('verified_revenue', 'Verified revenue'),
+    ('customers_count', 'Customers'),
+    ('active_subscriptions', 'Active subscriptions'),
+    ('pending_payments', 'Pending payments'),
+    ('expiring_subscriptions', 'Expiring subscriptions'),
+    ('follow_ups', 'Follow-ups'),
+    ('monthly_performance', 'Monthly performance'),
   ];
 
   @override
   void initState() {
     super.initState();
+    _loadPersistedCardVisibility();
     _load();
+  }
+
+  Future<void> _loadPersistedCardVisibility() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw =
+          prefs.getStringList(_cardVisibilityPrefKey) ?? const <String>[];
+      if (raw.isEmpty) return;
+      // A key present in the list = hidden; anything unlisted stays visible.
+      final hidden = raw.toSet();
+      setState(() {
+        for (final key in _cardVisibility.keys) {
+          _cardVisibility[key] = !hidden.contains(key);
+        }
+      });
+    } catch (_) {
+      // Preferences unavailable — keep the defaults.
+    }
   }
 
   /// Loads the dashboard for [_view]; a rejected team_data view falls back
@@ -94,10 +102,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       context.read<AppConfigService>().refresh();
       final res = await services.api.dashboard(view: view);
-      final dashboard = m.Dashboard.fromJson(res);
       if (!mounted) return;
       setState(() {
-        _data = dashboard;
+        _data = m.Dashboard.fromJson(res);
         _loading = false;
         _teamDenied = false;
       });
@@ -108,19 +115,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       try {
         final res = await services.api.dashboard(view: view);
-        final dashboard = m.Dashboard.fromJson(res);
         if (!mounted) return;
         setState(() {
-          _data = dashboard;
+          _data = m.Dashboard.fromJson(res);
           _loading = false;
           _error = null;
         });
       } on ApiException catch (e2) {
         if (!mounted) return;
         setState(() {
-          _error = e2.isNetwork || e2.isTimeout
-              ? 'No connection. Retrying…'
-              : e2.message;
+          _error = e2.isNetwork || e2.isTimeout ? 'No connection. Retrying…' : e2.message;
           _loading = false;
         });
       }
@@ -128,17 +132,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _teamDenied = _view == 'team_data' && _error == null && _data != null;
       });
-    }
-  }
-
-  void _openNavigationMenu(BuildContext context) {
-    final scaffold = Scaffold.maybeOf(context);
-    if (scaffold?.hasDrawer == true) {
-      scaffold!.openDrawer();
-    } else if (scaffold?.hasEndDrawer == true) {
-      scaffold!.openEndDrawer();
-    } else {
-      showCrmHubSheet(context);
     }
   }
 
@@ -168,6 +161,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (confirm == true) auth.logout();
   }
 
+  /// Persists the current [_cardVisibility] map so the chosen layout survives
+  /// a reload. Stores the hidden keys; the loader treats unlisted keys as
+  /// visible, so newly-added cards default to on without a schema bump.
+  Future<void> _saveCardVisibility() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hidden = _cardVisibility.entries
+          .where((e) => !e.value)
+          .map((e) => e.key)
+          .toList();
+      await prefs.setStringList(_cardVisibilityPrefKey, hidden);
+    } catch (_) {
+      // Best-effort; a failed write just means the layout won't persist.
+    }
+  }
+
+  /// Opens a real notifications panel backed by the `employee/notifications`
+  /// endpoint (the bell previously just popped a snackbar with the newest
+  /// item). The list loads the full unread set, supports per-item and
+  /// mark-all read, and re-reads when reopened.
+  Future<void> _showNotificationsPanel() async {
+    final services = context.read<AppServices>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
+      ),
+      builder: (_) => _NotificationsPanel(
+        services: services,
+        initialUnread: _data?.recentNotifications.where((n) => !n.isRead).length ?? 0,
+      ),
+    );
+  }
+
   void _showCustomizeCardsDialog() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
@@ -185,7 +214,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
               child: Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -196,11 +225,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Customize Dashboard Metric Cards',
+                            'Dashboard cards',
                             style: TextStyle(
                               fontFamily: AppTypography.fontFamily,
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                               color: isDark ? Colors.white : const Color(0xFF171717),
                             ),
                           ),
@@ -213,9 +242,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
-                      'Check cards you want to display on your sales dashboard.',
+                      'Choose which cards to show on your sales dashboard.',
                       style: TextStyle(
                         fontFamily: AppTypography.fontFamily,
                         fontSize: 12,
@@ -230,7 +259,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             for (final card in _availableCards)
                               Container(
                                 margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: isDark ? const Color(0xFF262626) : const Color(0xFFFAFAFA),
                                   borderRadius: BorderRadius.circular(AppColors.radiusMd),
@@ -246,34 +275,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         card.$2,
                                         style: TextStyle(
                                           fontFamily: AppTypography.fontFamily,
-                                          fontSize: 12.5,
+                                          fontSize: 13,
                                           fontWeight: FontWeight.w500,
                                           color: isDark ? Colors.white : const Color(0xFF171717),
                                         ),
                                       ),
                                     ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Checkbox(
-                                          value: _cardVisibility[card.$1] ?? true,
-                                          activeColor: isDark ? AppColors.brandDark : AppColors.brand,
-                                          onChanged: (val) {
-                                            setModalState(() {
-                                              _cardVisibility[card.$1] = val ?? true;
-                                            });
-                                            setState(() {});
-                                          },
-                                        ),
-                                        Text(
-                                          'Show',
-                                          style: TextStyle(
-                                            fontFamily: AppTypography.fontFamily,
-                                            fontSize: 12,
-                                            color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                                          ),
-                                        ),
-                                      ],
+                                    Checkbox(
+                                      value: _cardVisibility[card.$1] ?? true,
+                                      activeColor: isDark ? AppColors.brandDark : AppColors.brand,
+                                      onChanged: (val) {
+                                        setModalState(() => _cardVisibility[card.$1] = val ?? true);
+                                      },
                                     ),
                                   ],
                                 ),
@@ -293,10 +306,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 _cardVisibility[card.$1] = true;
                               }
                             });
-                            setState(() {});
                           },
                           child: const Text(
-                            'Reset Defaults',
+                            'Reset defaults',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -313,19 +325,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 side: BorderSide(
                                   color: isDark ? const Color(0xFF404040) : const Color(0xFFE5E5E5),
                                 ),
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               ),
-                              child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+                              child: const Text('Cancel', style: TextStyle(fontSize: 13)),
                             ),
                             const SizedBox(width: 8),
                             FilledButton(
-                              onPressed: () => Navigator.of(ctx).pop(),
+                              onPressed: () async {
+                                setState(() {});
+                                await _saveCardVisibility();
+                                if (ctx.mounted) Navigator.of(ctx).pop();
+                              },
                               style: FilledButton.styleFrom(
                                 backgroundColor: isDark ? AppColors.brandDark : AppColors.brand,
                                 foregroundColor: isDark ? AppColors.brand : Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               ),
-                              child: const Text('Save Layout', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              child: const Text('Save', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                             ),
                           ],
                         ),
@@ -346,486 +362,259 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
     final auth = context.watch<AuthController>();
-    final services = context.read<AppServices>();
     final employeeName = auth.me?.data.name ?? 'Employee';
-    final username = auth.me?.data.username ?? 'employee';
-    final teamName = auth.me?.data.team?.teamName ?? 'Unassigned';
-    final teamCode = auth.me?.data.team?.teamCode ?? teamName;
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? 'Good morning'
-        : (hour < 17 ? 'Good afternoon' : 'Good evening');
+    final teamCode = auth.me?.data.team?.teamCode ?? '';
+    final unreadCount = _data?.recentNotifications.where((n) => !n.isRead).length ?? 0;
+    final notifications = _data?.recentNotifications ?? const <m.DashboardRecentNotification>[];
+
+    // Header total height = status bar inset + 56px bar.
+    final headerHeight = MediaQuery.paddingOf(context).top + 56;
+
+    final header = Container(
+      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+      child: LeadxNavHeader(
+        employeeName: employeeName,
+        teamCode: teamCode.isEmpty ? null : teamCode,
+        unreadCount: unreadCount,
+        // Opens the shell's navigation drawer when one is present (the
+        // dashboard is a tab under HomeShell).
+        onMenuTap: Scaffold.maybeOf(context)?.hasDrawer == true
+            ? () => Scaffold.of(context).openDrawer()
+            : null,
+        onRefresh: _load,
+        onNotifications: notifications.isEmpty ? null : _showNotificationsPanel,
+        onLogout: () => _confirmLogout(context, auth),
+      ),
+    );
 
     Widget body;
     if (_loading && _data == null) {
       body = const LoadingScreen();
     } else if (_error != null && _data == null) {
-      body = Builder(
-        builder: (context) {
-          final top = MediaQuery.paddingOf(context).top;
-          return Material(
-            color: cs.surface,
-            child: Stack(
-              children: [
-                RefreshIndicator(
-                  edgeOffset: top + 56,
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(16, top + 56 + 16, 16, 16),
-                    children: [ErrorBanner(message: _error!, onRetry: _load)],
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    color: isDark ? const Color(0xFF171717) : Colors.white,
-                    padding: EdgeInsets.only(top: top),
-                    child: LeadxNavHeader(
-                      employeeName: employeeName,
-                      teamCode: teamCode,
-                      unreadCount: 0,
-                      onMenuTap: () => _openNavigationMenu(context),
-                      onLogoTap: _load,
-                      onNotificationsTap: () => _push(context, const NotificationsScreen()),
-                      onProfileTap: () => _push(context, const ProfileScreen()),
-                      onLogoutTap: () => _confirmLogout(context, auth),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+      body = RefreshIndicator(
+        edgeOffset: headerHeight,
+        onRefresh: _load,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, 24),
+          children: [ErrorBanner(message: _error!, onRetry: _load)],
+        ),
       );
     } else {
       final d = _data!;
       final s = d.summary;
-      final unreadCount = d.recentNotifications.where((n) => !n.isRead).length;
 
-      body = Builder(
-        builder: (context) {
-          final top = MediaQuery.paddingOf(context).top;
-          return Material(
-            color: cs.surface,
-            child: Stack(
+      body = RefreshIndicator(
+        edgeOffset: headerHeight,
+        onRefresh: _load,
+        child: ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, 24),
+          children: [
+            // ── Page title ─────────────────────────────────────────
+            Text(
+              _view == 'team_data' ? 'Team dashboard' : 'My dashboard',
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
+                color: isDark ? Colors.white : const Color(0xFF171717),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$employeeName • $_viewScope',
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: 13,
+                color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Header controls: customize + scope ───────────────────
+            Row(
               children: [
-                RefreshIndicator(
-                  edgeOffset: top + 56,
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: EdgeInsets.fromLTRB(16, top + 56 + 12, 16, 120),
-                    children: [
-                      // ── Top Bar: Greeting + Sales Dashboard Title & Subtitle ─
-                      _DashboardTopBar(
-                        employeeName: employeeName,
-                        username: username,
-                        teamName: teamName,
-                        view: _view,
-                        greeting: greeting,
-                      ),
-                      const SizedBox(height: 10),
-
-                      // ── Header Controls: Customize Cards & Scope Segment ───
-                      Row(
-                        children: [
-                          InkWell(
-                            onTap: _showCustomizeCardsDialog,
-                            borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF262626) : Colors.white,
-                                borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                                border: Border.all(
-                                  color: isDark ? const Color(0xFF404040) : const Color(0xFFD4D4D4),
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x0A000000),
-                                    blurRadius: 2,
-                                    offset: Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.tune_rounded,
-                                    size: 14,
-                                    color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    'Customize Cards',
-                                    style: TextStyle(
-                                      fontFamily: AppTypography.fontFamily,
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? Colors.white : const Color(0xFF404040),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          SizedBox(
-                            width: 190,
-                            child: DataScopeSegmentControl(
-                              selectedView: _view,
-                              onChanged: (next) {
-                                if (next == _view) return;
-                                setState(() {
-                                  _view = next;
-                                  _teamDenied = false;
-                                });
-                                _load();
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ── Alerts / Notices ──────────────────────────────────────
-                      if (_teamDenied) ...[
-                        const _ScopeNotice(),
-                        const SizedBox(height: 6),
-                      ],
-
-                      if (_view == 'team_data') ...[
-                        _TeamDataModeAlert(
-                          onSwitchToMyData: () {
-                            setState(() {
-                              _view = 'my_data';
-                              _teamDenied = false;
-                            });
-                            _load();
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      if (d.warning != null) ...[
-                        AppCard.surface(
-                          context,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          color: cs.tertiaryContainer,
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, size: 16, color: cs.onTertiaryContainer),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  d.warning!,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppTypography.secondary.copyWith(
-                                    color: cs.onTertiaryContainer,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // ── Primary Stat Cards (§4.1: Collected vs Due) ───────────
-                      _CollectedVsDueCard(
-                        summary: s,
-                        onTap: () => _push(context, const OrdersScreen()),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // ── 9 Metric Cards Grid ───────────────────────────────────
-                      _buildMetricCards(context, s, isDark),
-                      const SizedBox(height: 18),
-
-                      // ── Middle Section: My Recent Orders & Portal Actions ─────
-                      _buildRecentOrdersAndActions(context, d, auth, services, isDark),
-                      const SizedBox(height: 18),
-
-                      // ── Lower Section: Follow-ups & Expiring Reminders ────────
-                      _buildFollowUpsAndExpiring(context, d, isDark),
-                      const SizedBox(height: 18),
-
-                      // ── Bottom Section: 6-Month Sales Trajectory ──────────────
-                      if (d.monthlySalesChart.isNotEmpty) ...[
-                        _buildTrajectorySection(context, d.monthlySalesChart, isDark),
-                        const SizedBox(height: 18),
-                      ],
-
-                      // ── LeadX Employee Portal Footer ──────────────────────────
-                      _buildEmployeeFooter(isDark),
-                    ],
-                  ),
+                _QuietButton(
+                  isDark: isDark,
+                  icon: Icons.tune_rounded,
+                  label: 'Customize',
+                  onTap: _showCustomizeCardsDialog,
                 ),
-
-                // ── Sticky LeadxNavHeader matching <header class="page-header"> ──
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    color: isDark ? const Color(0xFF171717) : Colors.white,
-                    padding: EdgeInsets.only(top: top),
-                    child: LeadxNavHeader(
-                      employeeName: employeeName,
-                      teamCode: teamCode,
-                      unreadCount: unreadCount,
-                      onMenuTap: () => _openNavigationMenu(context),
-                      onLogoTap: _load,
-                      onNotificationsTap: () => _push(context, const NotificationsScreen()),
-                      onProfileTap: () => _push(context, const ProfileScreen()),
-                      onLogoutTap: () => _confirmLogout(context, auth),
-                    ),
-                  ),
-                ),
-
-                // ── Floating Action Dock (Search & + Order) ───────────────
-                Positioned(
-                  bottom: 112,
-                  right: 16,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: cs.surface,
-                      borderRadius: BorderRadius.circular(AppColors.radiusXl),
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.45),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x0D000000),
-                          blurRadius: 2,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _DockAction(
-                          context,
-                          icon: const Icon(Icons.search, size: 20),
-                          onTap: () => _push(context, const GlobalSearchScreen()),
-                        ),
-                        if (auth.canCreateOrders)
-                          _DockAction(
-                            context,
-                            primary: true,
-                            icon: const Icon(Icons.add, size: 20),
-                            onTap: () => showOrderCreateSheet(context, services),
-                          ),
-                      ],
-                    ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DataScopeSegmentControl(
+                    selectedView: _view,
+                    onChanged: (next) {
+                      if (next == _view) return;
+                      setState(() {
+                        _view = next;
+                        _teamDenied = false;
+                      });
+                      _load();
+                    },
                   ),
                 ),
               ],
             ),
-          );
-        },
+            const SizedBox(height: 16),
+
+            // ── Notices ────────────────────────────────────────────
+            if (_teamDenied) ...[
+              const _ScopeNotice(),
+              const SizedBox(height: 12),
+            ],
+            if (_view == 'team_data') ...[
+              _TeamDataModeAlert(
+                onSwitchToMyData: () {
+                  setState(() {
+                    _view = 'my_data';
+                    _teamDenied = false;
+                  });
+                  _load();
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (d.warning != null) ...[
+              AppCard.surface(
+                context,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                color: cs.tertiaryContainer,
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: cs.onTertiaryContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        d.warning!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.secondary.copyWith(
+                          color: cs.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // ── Collected vs Due (the one featured figure) ────────
+            _CollectedVsDueCard(summary: s),
+            const SizedBox(height: 16),
+
+            // ── Metric cards ───────────────────────────────────────
+            _buildMetricCards(context, s, isDark),
+            const SizedBox(height: 24),
+
+            // ── Recent orders ──────────────────────────────────────
+            _buildRecentOrders(context, d, isDark),
+            const SizedBox(height: 24),
+
+            // ── Follow-ups & expiring ──────────────────────────────
+            _buildFollowUpsAndExpiring(context, d, isDark),
+            const SizedBox(height: 24),
+
+            // ── 6-month trajectory ─────────────────────────────────
+            if (d.monthlySalesChart.isNotEmpty) ...[
+              _buildTrajectorySection(context, d.monthlySalesChart, isDark),
+              const SizedBox(height: 24),
+            ],
+          ],
+        ),
       );
     }
 
-    return NativeNavigationBar(
-      title: NativeBarTitle(
-        title: 'LeadX Dashboard',
-        subtitle: '$greeting, $employeeName',
-        capsule: true,
-        icon: const NativeIcon.symbol(
-          'chart.bar.xaxis',
-          fallback: Icons.bar_chart_rounded,
-        ),
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Stack(
+        children: [
+          body,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: header,
+          ),
+        ],
       ),
-      leading: NativeBarButton(
-        icon: const NativeIcon.symbol('sparkles', fallback: Icons.auto_awesome),
-        title: 'Executive Hub',
-        onPressed: () => showCrmHubSheet(context),
-      ),
-      trailing: [
-        if (auth.canCreateOrders)
-          NativeBarButton(
-            icon: const NativeIcon.symbol('plus', fallback: Icons.add),
-            title: 'New',
-            prominent: true,
-            group: 1,
-            menu: [
-              NativeMenuItem(
-                title: 'New Order',
-                icon: const NativeIcon.symbol(
-                  'cart.badge.plus',
-                  fallback: Icons.add_shopping_cart,
-                ),
-                onSelected: () => showOrderCreateSheet(context, services),
-              ),
-              NativeMenuItem(
-                title: 'Schedule Follow-up',
-                icon: const NativeIcon.symbol(
-                  'calendar.badge.plus',
-                  fallback: Icons.event,
-                ),
-                onSelected: () => showFollowUpCreateSheet(context),
-              ),
-            ],
-          ),
-        NativeBarButton(
-          icon: const NativeIcon.symbol(
-            'magnifyingglass',
-            fallback: Icons.search,
-          ),
-          title: 'Search',
-          group: 0,
-          onPressed: () => _push(context, const GlobalSearchScreen()),
-        ),
-        NativeBarButton(
-          icon: const NativeIcon.symbol(
-            'bell',
-            fallback: Icons.notifications_none,
-          ),
-          title: 'Alerts',
-          group: 0,
-          onPressed: () => _push(context, const NotificationsScreen()),
-        ),
-        NativeBarButton(
-          icon: const NativeIcon.symbol(
-            'person.crop.circle',
-            fallback: Icons.account_circle_outlined,
-          ),
-          title: 'Profile',
-          group: 0,
-          onPressed: () => _push(context, const ProfileScreen()),
-        ),
-      ],
-      child: body,
     );
   }
 
-  void _push(BuildContext context, Widget screen) =>
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-
-  /// 9 Metric Cards Grid matching the Blade / HTML order & customization
+  /// The metric cards grid. Each card is a label + figure + quiet caption —
+  /// no icon padding, no accent bars. Featured cards get a dark surface
+  /// step, not a glow.
   Widget _buildMetricCards(BuildContext context, m.DashboardSummary s, bool isDark) {
-    final List<Widget> cards = [];
-
-    // 1. orders_count
-    if (_cardVisibility['orders_count'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team total orders' : 'My total orders',
+    final cs = Theme.of(context).colorScheme;
+    final cards = <_MetricCard>[
+      if (_cardVisibility['orders_count'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team total orders' : 'Total orders',
           value: '${s.totalOrders}',
-          subtitle: 'Total volume recorded',
-          icon: Icons.receipt_long_outlined,
-          onTap: () => _push(context, const OrdersScreen()),
+          subtitle: 'All time',
         ),
-      );
-    }
-
-    // 2. sales_value
-    if (_cardVisibility['sales_value'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team sales value' : 'My sales closing value',
+      if (_cardVisibility['sales_value'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team closing value' : 'Closing value',
           value: Fmt.money(s.closingValue),
           subtitle: 'Agreed deal values',
-          icon: Icons.trending_up_rounded,
-          onTap: () => _push(context, const OrdersScreen()),
         ),
-      );
-    }
-
-    // 3. verified_revenue (Featured Card)
-    if (_cardVisibility['verified_revenue'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team verified revenue' : 'My verified revenue',
+      if (_cardVisibility['verified_revenue'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team verified revenue' : 'Verified revenue',
           value: Fmt.money(s.verifiedRevenue),
-          subtitle: 'Cleared and verified collections',
+          subtitle: 'Cleared collections',
           featured: true,
-          onTap: () => _push(context, const OrdersScreen()),
         ),
-      );
-    }
-
-    // 4. customers_count
-    if (_cardVisibility['customers_count'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team customers' : 'My customers',
+      if (_cardVisibility['customers_count'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team customers' : 'Customers',
           value: '${s.customersCount}',
-          subtitle: 'Unique client accounts',
-          icon: Icons.people_alt_outlined,
-          onTap: () => _push(context, const CustomersScreen()),
+          subtitle: 'Client accounts',
         ),
-      );
-    }
-
-    // 5. active_subscriptions
-    if (_cardVisibility['active_subscriptions'] ?? true) {
-      cards.add(
-        StatCard(
+      if (_cardVisibility['active_subscriptions'] ?? true)
+        _MetricCard(
           title: 'Active subscriptions',
           value: '${s.activeSubscriptions}',
-          subtitle: 'Current live plans',
-          icon: Icons.repeat_rounded,
-          onTap: () => _push(context, const SubscriptionsScreen()),
+          subtitle: 'Live plans',
         ),
-      );
-    }
-
-    // 6. pending_payments
-    if (_cardVisibility['pending_payments'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team pending payments' : 'My pending payments',
-          value: '${s.pendingPaymentsCount} (${Fmt.money(s.pendingAmount)})',
-          subtitle: 'Outstanding payment collection',
-          icon: Icons.hourglass_top_rounded,
-          accent: AppColors.warningLight,
-          onTap: () => _push(context, const PaymentsScreen()),
+      if (_cardVisibility['pending_payments'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team pending payments' : 'Pending payments',
+          value: '${s.pendingPaymentsCount} • ${Fmt.money(s.pendingAmount)}',
+          subtitle: 'Outstanding',
         ),
-      );
-    }
-
-    // 7. expiring_subscriptions
-    if (_cardVisibility['expiring_subscriptions'] ?? true) {
-      cards.add(
-        StatCard(
-          title: 'Expiring in 30 Days',
+      if (_cardVisibility['expiring_subscriptions'] ?? true)
+        _MetricCard(
+          title: 'Expiring in 30 days',
           value: '${s.expiringSubscriptions}',
-          subtitle: 'Requires renewal outreach',
-          icon: Icons.notification_important_outlined,
-          accent: s.expiringSubscriptions > 0 ? AppColors.dangerLight : null,
-          onTap: () => _push(context, const ExpiringSubscriptionsScreen()),
+          subtitle: 'Needs renewal outreach',
         ),
-      );
-    }
-
-    // 8. follow_ups
-    if (_cardVisibility['follow_ups'] ?? true) {
-      cards.add(
-        StatCard(
-          title: _view == 'team_data' ? 'Team follow-ups' : 'My follow-ups',
+      if (_cardVisibility['follow_ups'] ?? true)
+        _MetricCard(
+          title: _view == 'team_data' ? 'Team follow-ups' : 'Follow-ups',
           value: '${s.followUps}',
-          subtitle: 'Scheduled client tasks',
-          icon: Icons.event_note_outlined,
-          onTap: () => _push(context, const FollowUpsScreen()),
+          subtitle: 'Scheduled tasks',
         ),
-      );
-    }
-
-    // 9. monthly_performance
-    if (_cardVisibility['monthly_performance'] ?? true) {
-      cards.add(
-        StatCard(
-          title: 'Monthly performance',
+      if (_cardVisibility['monthly_performance'] ?? true)
+        _MetricCard(
+          title: 'This month',
           value: Fmt.money(s.monthlyClosingValue),
-          subtitle: '${s.monthlyOrders} orders this month',
-          icon: Icons.calendar_month_outlined,
-          onTap: () => _push(context, const OrdersScreen()),
+          subtitle: '${s.monthlyOrders} ${s.monthlyOrders == 1 ? 'order' : 'orders'}',
+        ),
+    ];
+
+    if (cards.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: AppCard.decorationOf(context),
+        child: const Center(
+          child: Text(
+            'No cards to show. Enable some from Customize cards.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF737373)),
+          ),
         ),
       );
     }
@@ -838,851 +627,257 @@ class _DashboardScreenState extends State<DashboardScreen> {
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: isWide ? 3 : 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            mainAxisExtent: 148,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            mainAxisExtent: 120,
           ),
           itemCount: cards.length,
-          itemBuilder: (_, i) => cards[i],
+          itemBuilder: (_, i) => cards[i].build(context, isDark: isDark, cs: cs),
         );
       },
     );
   }
 
-  /// Middle Section: My Recent Orders & Portal Actions matching web grid
-  Widget _buildRecentOrdersAndActions(
-    BuildContext context,
-    m.Dashboard d,
-    AuthController auth,
-    AppServices services,
-    bool isDark,
-  ) {
-    return Column(
-      children: [
-        // Card 1: My Recent Orders
-        _LeadxContainerCard(
-          isDark: isDark,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _view == 'team_data' ? 'Recent Team Orders' : 'My Recent Orders',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF171717),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => _push(context, const OrdersScreen()),
-                    child: Text(
-                      'View all →',
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
-                        color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF404040),
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (d.recentOrders.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      'No orders found in this period.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFFA3A3A3)),
-                    ),
-                  ),
-                )
-              else
-                Column(
-                  children: [
-                    // Table Header
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Text(
-                              'ORDER ID / PRODUCT',
-                              style: TextStyle(
-                                fontFamily: AppTypography.fontFamily,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              'VALUE',
-                              style: TextStyle(
-                                fontFamily: AppTypography.fontFamily,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'STATUS',
-                            style: TextStyle(
-                              fontFamily: AppTypography.fontFamily,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 52),
-                        ],
-                      ),
-                    ),
-                    Divider(
-                      height: 1,
-                      color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFF0F0F0),
-                    ),
-                    for (final order in d.recentOrders)
-                      _buildOrderTableRow(context, order, isDark),
-                  ],
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
+  Widget _buildRecentOrders(BuildContext context, m.Dashboard d, bool isDark) {
+    final cs = Theme.of(context).colorScheme;
+    final title = _view == 'team_data' ? 'Recent team orders' : 'Recent orders';
+    final sub = d.recentOrders.isEmpty
+        ? 'No orders recorded yet'
+        : '${d.recentOrders.length} most recent';
 
-        // Card 2: Portal Actions
-        _LeadxContainerCard(
-          isDark: isDark,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Portal Actions',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF171717),
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Quick shortcuts to your daily sales workflow.',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 12,
-                  color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (_view != 'team_data') ...[
-                if (auth.canCreateOrders)
-                  AppPrimaryButton(
-                    label: '+ Create New Order',
-                    onPressed: () => showOrderCreateSheet(context, services),
-                  ),
-              ] else ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'Order Creation disabled in Team Data mode',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                        color: Color(0xFF737373),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              AppOutlinedButton(
-                label: 'View Orders List',
-                onPressed: () => _push(context, const OrdersScreen()),
-              ),
-              const SizedBox(height: 8),
-              AppOutlinedButton(
-                label: 'My Customers',
-                onPressed: () => _push(context, const CustomersScreen()),
-              ),
-              const SizedBox(height: 8),
-              AppOutlinedButton(
-                label: 'My Profile',
-                onPressed: () => _push(context, const ProfileScreen()),
-              ),
-              const SizedBox(height: 14),
-              Divider(
-                height: 1,
-                color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFF0F0F0),
-              ),
-              const SizedBox(height: 10),
-              Center(
-                child: Text(
-                  'LeadX Enterprise Sales Management',
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: 11,
-                    color: isDark ? const Color(0xFF737373) : const Color(0xFFA3A3A3),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOrderTableRow(BuildContext context, Order order, bool isDark) {
-    return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => OrderDetailScreen(orderId: order.id)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 4,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    order.orderNumber,
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : const Color(0xFF171717),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    order.productNameSnapshot ?? order.productName ?? 'Standard Plan',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 11,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 3,
-              child: Text(
-                Fmt.money(order.closingValue),
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white : const Color(0xFF171717),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            StatusBadge(
-              status: order.paymentStatus.isNotEmpty
-                  ? order.paymentStatus
-                  : order.orderStatus,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'View →',
-              style: TextStyle(
-                fontFamily: AppTypography.fontFamily,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.brandDark : const Color(0xFF404040),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Lower Section: Follow-ups & Expiring Reminders
-  Widget _buildFollowUpsAndExpiring(BuildContext context, m.Dashboard d, bool isDark) {
-    return Column(
-      children: [
-        // Follow-ups Card
-        _LeadxContainerCard(
-          isDark: isDark,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Upcoming Client Follow-ups',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : const Color(0xFF171717),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Scheduled touchpoints & retention tasks',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 11.5,
-                          color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                        ),
-                      ),
-                    ],
-                  ),
-                  InkWell(
-                    onTap: () => _push(context, const FollowUpsScreen()),
-                    child: Text(
-                      'All tasks →',
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
-                        color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF404040),
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Divider(
-                height: 1,
-                color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFF0F0F0),
-              ),
-              if (d.recentFollowUps.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      'No upcoming follow-ups scheduled',
-                      style: TextStyle(fontSize: 12, color: Color(0xFFA3A3A3)),
-                    ),
-                  ),
-                )
-              else
-                for (final fu in d.recentFollowUps)
-                  _buildFollowUpRow(context, fu, isDark),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-
-        // Expiring Subscriptions Card
-        _LeadxContainerCard(
-          isDark: isDark,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Expiring Subscriptions (30 Days)',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white : const Color(0xFF171717),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Accounts due for renewal outreach',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 11.5,
-                          color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                        ),
-                      ),
-                    ],
-                  ),
-                  InkWell(
-                    onTap: () => _push(context, const ExpiringSubscriptionsScreen()),
-                    child: Text(
-                      'Expiry center →',
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
-                        color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF404040),
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Divider(
-                height: 1,
-                color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFF0F0F0),
-              ),
-              if (d.expiringSubscriptions.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text(
-                      'No subscriptions expiring in the next 30 days',
-                      style: TextStyle(fontSize: 12, color: Color(0xFFA3A3A3)),
-                    ),
-                  ),
-                )
-              else
-                for (final sub in d.expiringSubscriptions)
-                  _buildExpiringSubRow(context, sub, isDark),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFollowUpRow(BuildContext context, m.DashboardRecentFollowUp fu, bool isDark) {
-    return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => FollowUpDetailScreen(followUpId: fu.id)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    fu.title ?? 'Follow-up #${fu.id}',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF171717),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Customer: ${fu.customer?.name ?? 'Client'} • Priority: ${fu.priority ?? 'Normal'}',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 11.5,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            StatusBadge(
-              status: 'pending',
-              label: fu.scheduledAt != null ? Fmt.dateTime(fu.scheduledAt) : 'Pending',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExpiringSubRow(BuildContext context, Subscription sub, bool isDark) {
-    return InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => SubscriptionDetailScreen(subscriptionId: sub.id)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    sub.planSnapshot ?? 'Subscription #${sub.id}',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF171717),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Plan: ${sub.planSnapshot ?? 'Custom'} • Customer: ${sub.customerName ?? 'Client'}',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 11.5,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            StatusBadge(
-              status: 'danger',
-              label: 'Expires ${Fmt.date(sub.expiresAt)}',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 6-Month Sales Trajectory (Card with Chart + Table matching web)
-  Widget _buildTrajectorySection(
-    BuildContext context,
-    List<m.DashboardChartPoint> chart,
-    bool isDark,
-  ) {
-    return _LeadxContainerCard(
-      isDark: isDark,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppCard.decorationOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '6-Month Sales Trajectory',
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : const Color(0xFF171717),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Orders written and total agreed closing values',
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 11.5,
-              color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Visual Bar Chart
-          _Chart(chart),
-          const SizedBox(height: 14),
-
-          // Trajectory Table
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF262626) : const Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    'PERIOD',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    'ORDERS WRITTEN',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    'TOTAL CLOSING VALUE',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          for (final entry in chart)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                    color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      entry.month,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
                       style: TextStyle(
                         fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : const Color(0xFF171717),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(
-                      '${entry.orders}',
-                      textAlign: TextAlign.right,
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
                       style: TextStyle(
                         fontFamily: AppTypography.fontFamily,
                         fontSize: 12,
                         color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      Fmt.money(entry.closingValue),
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF171717),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
+          ),
+          if (d.recentOrders.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'No orders recorded yet',
+                  style: TextStyle(fontSize: 13, color: Color(0xFFA3A3A3)),
+                ),
+              ),
+            )
+          else ...[
+            const SizedBox(height: 12),
+            _TableHeaderRow(isDark: isDark),
+            for (final order in d.recentOrders)
+              _OrderRow(order: order, isDark: isDark, cs: cs),
+          ],
         ],
       ),
     );
   }
 
-  /// LeadX Employee Portal Footer matching employee.blade.php
-  Widget _buildEmployeeFooter(bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '© ${DateTime.now().year} LeadX. Employee Portal.',
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 11,
-              color: isDark ? const Color(0xFF737373) : const Color(0xFFA3A3A3),
-            ),
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+  Widget _buildFollowUpsAndExpiring(BuildContext context, m.Dashboard d, bool isDark) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: AppCard.decorationOf(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFF22C55E),
-                ),
-              ),
-              const SizedBox(width: 5),
               Text(
-                'Session Active',
+                'Upcoming follow-ups',
                 style: TextStyle(
                   fontFamily: AppTypography.fontFamily,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF171717),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Scheduled touchpoints and retention tasks',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 12,
                   color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
                 ),
               ),
+              const SizedBox(height: 12),
+              if (d.recentFollowUps.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'No upcoming follow-ups',
+                      style: TextStyle(fontSize: 13, color: Color(0xFFA3A3A3)),
+                    ),
+                  ),
+                )
+              else
+                for (final fu in d.recentFollowUps)
+                  _FollowUpRow(fu: fu, isDark: isDark, cs: cs),
             ],
           ),
+        ),
+        const SizedBox(height: 16),
+
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: AppCard.decorationOf(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Expiring subscriptions',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF171717),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Accounts due for renewal in 30 days',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 12,
+                  color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (d.expiringSubscriptions.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'Nothing expiring in the next 30 days',
+                      style: TextStyle(fontSize: 13, color: Color(0xFFA3A3A3)),
+                    ),
+                  ),
+                )
+              else
+                for (final sub in d.expiringSubscriptions)
+                  _ExpiringSubRow(sub: sub, isDark: isDark, cs: cs),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrajectorySection(
+    BuildContext context,
+    List<m.DashboardChartPoint> chart,
+    bool isDark,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppCard.decorationOf(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Sales trajectory',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : const Color(0xFF171717),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Orders and closing value over the last 6 months',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 12,
+              color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          _Chart(chart, isDark: isDark, cs: cs),
         ],
       ),
     );
   }
 }
 
-/// Top bar in the main content matching the Blade top block in employee-dashboard-preview.html
-class _DashboardTopBar extends StatelessWidget {
-  const _DashboardTopBar({
-    required this.employeeName,
-    required this.username,
-    required this.teamName,
-    required this.view,
-    required this.greeting,
+// ── Small building blocks ───────────────────────────────────────────────────
+
+class _QuietButton extends StatelessWidget {
+  const _QuietButton({
+    required this.isDark,
+    required this.icon,
+    required this.label,
+    required this.onTap,
   });
 
-  final String employeeName;
-  final String username;
-  final String teamName;
-  final String view;
-  final String greeting;
+  final bool isDark;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    final now = DateTime.now();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    final date = '${months[now.month - 1]} ${now.day}, ${now.year}';
-    final hour = now.hour;
-    final timeIcon = hour < 12
-        ? Icons.wb_sunny_outlined
-        : (hour < 17 ? Icons.wb_twilight_outlined : Icons.nightlight_outlined);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              timeIcon,
-              size: 13,
-              color: isDark ? AppColors.brandDark : AppColors.brand,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppColors.radiusMd),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF262626) : Colors.white,
+            borderRadius: BorderRadius.circular(AppColors.radiusMd),
+            border: Border.all(
+              color: isDark ? const Color(0xFF404040) : const Color(0xFFD4D4D4),
             ),
-            const SizedBox(width: 5),
-            Text(
-              '$greeting, $employeeName',
-              style: TextStyle(
-                fontFamily: AppTypography.fontFamily,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.calendar_today_outlined, size: 10, color: cs.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Text(
-                    date,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 10.5,
-                      color: cs.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          view == 'team_data'
-              ? 'Team Performance Dashboard'
-              : 'My Sales Dashboard',
-          style: TextStyle(
-            fontFamily: AppTypography.fontFamily,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-            color: isDark ? Colors.white : const Color(0xFF171717),
           ),
-        ),
-        const SizedBox(height: 2),
-        RichText(
-          text: TextSpan(
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 12,
-              color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TextSpan(text: '$employeeName ($username) • Team: '),
-              TextSpan(
-                text: teamName,
+              Icon(
+                icon,
+                size: 14,
+                color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
                 style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: isDark ? Colors.white : const Color(0xFF404040),
                 ),
@@ -1690,43 +885,372 @@ class _DashboardTopBar extends StatelessWidget {
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
 
-/// Standard LeadX surface card with 12px radius, light grey border and subtle shadow
-class _LeadxContainerCard extends StatelessWidget {
-  const _LeadxContainerCard({required this.child, required this.isDark});
+class _MetricCard {
+  _MetricCard({
+    required this.title,
+    required this.value,
+    this.subtitle,
+    this.featured = false,
+  });
 
-  final Widget child;
+  final String title;
+  final String value;
+  final String? subtitle;
+  final bool featured;
+
+  Widget build(BuildContext context, {required bool isDark, required ColorScheme cs}) {
+    final bg = featured
+        ? (isDark ? const Color(0xFF111111) : const Color(0xFF171717))
+        : (isDark ? const Color(0xFF1E1E1E) : Colors.white);
+    final border = featured
+        ? const Color(0xFF171717)
+        : (isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5));
+
+    final titleColor = featured
+        ? Colors.white.withValues(alpha: 0.7)
+        : (isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373));
+    final valueColor = featured
+        ? Colors.white
+        : (isDark ? const Color(0xFFFAFAFA) : const Color(0xFF171717));
+    final subtitleColor = featured
+        ? Colors.white.withValues(alpha: 0.5)
+        : (isDark ? const Color(0xFF888888) : const Color(0xFFA3A3A3));
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppColors.radiusLg),
+        border: Border.all(color: border, width: 1),
+        boxShadow: featured
+            ? const [
+                BoxShadow(
+                  color: Color(0x1F000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ]
+            : const [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 2,
+                  offset: Offset(0, 1),
+                ),
+              ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 12,
+              color: titleColor,
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: valueColor,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          if (subtitle != null)
+            Text(
+              subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: 11,
+                color: subtitleColor,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Column widths shared by the header and every order row so the three
+/// columns stay vertically aligned and nothing overflows on narrow phones.
+class _OrderColumns {
+  static const double valueWidth = 72;
+  static const double statusWidth = 80;
+  static const double gap = 8;
+}
+
+class _TableHeaderRow extends StatelessWidget {
+  const _TableHeaderRow({required this.isDark});
+
   final bool isDark;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(AppColors.radiusLg),
-        border: Border.all(
-          color: isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5),
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 2,
-            offset: Offset(0, 1),
+    final color = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+    TextStyle label() => TextStyle(
+          fontFamily: AppTypography.fontFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: color,
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(child: Text('Order', style: label())),
+          const SizedBox(width: _OrderColumns.gap),
+          SizedBox(
+            width: _OrderColumns.valueWidth,
+            child: Align(alignment: Alignment.centerRight, child: Text('Value', style: label())),
+          ),
+          const SizedBox(width: _OrderColumns.gap),
+          SizedBox(
+            width: _OrderColumns.statusWidth,
+            child: Align(alignment: Alignment.centerRight, child: Text('Status', style: label())),
           ),
         ],
       ),
-      child: child,
     );
   }
 }
 
-/// Banner shown when viewing Team Data mode (View-Only) matching dashboard.blade.php
+class _OrderRow extends StatelessWidget {
+  const _OrderRow({required this.order, required this.isDark, required this.cs});
+
+  final Order order;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
+    final ink = isDark ? Colors.white : const Color(0xFF171717);
+    final muted = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: divider),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Order number + product take whatever room is left; they
+          // ellipsize instead of pushing the value/status columns off.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  order.orderNumber,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  order.productNameSnapshot ?? order.productName ?? 'Standard plan',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 12,
+                    color: muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: _OrderColumns.gap),
+          SizedBox(
+            width: _OrderColumns.valueWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                Fmt.money(order.closingValue),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: ink,
+                  fontFeatures: AppTypography.tabularFigures,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: _OrderColumns.gap),
+          SizedBox(
+            width: _OrderColumns.statusWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: StatusBadge(
+                status:
+                    order.paymentStatus.isNotEmpty ? order.paymentStatus : order.orderStatus,
+                compact: true,
+                ellipsize: true,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FollowUpRow extends StatelessWidget {
+  const _FollowUpRow({required this.fu, required this.isDark, required this.cs});
+
+  final m.DashboardRecentFollowUp fu;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
+    final ink = isDark ? Colors.white : const Color(0xFF171717);
+    final muted = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: divider),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fu.title ?? 'Follow-up #${fu.id}',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${fu.customer?.name ?? 'Client'} • ${fu.priority ?? 'Normal'} priority',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 12,
+                    color: muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Flexible + ellipsized label so a long "dd MMM yyyy, HH:mm"
+          // date can never overflow the row on a narrow screen.
+          Flexible(
+            child: StatusBadge(
+              status: 'pending',
+              label: fu.scheduledAt != null ? Fmt.dateTime(fu.scheduledAt) : 'Pending',
+              compact: true,
+              ellipsize: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpiringSubRow extends StatelessWidget {
+  const _ExpiringSubRow({required this.sub, required this.isDark, required this.cs});
+
+  final Subscription sub;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
+    final ink = isDark ? Colors.white : const Color(0xFF171717);
+    final muted = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: divider),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sub.planSnapshot ?? 'Subscription #${sub.id}',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${sub.customerName ?? 'Client'} • expires ${Fmt.date(sub.expiresAt)}',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 12,
+                    color: muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: StatusBadge(
+              status: 'danger',
+              label: 'Expires ${Fmt.date(sub.expiresAt)}',
+              compact: true,
+              ellipsize: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TeamDataModeAlert extends StatelessWidget {
   const _TeamDataModeAlert({required this.onSwitchToMyData});
 
@@ -1761,16 +1285,17 @@ class _TeamDataModeAlert extends StatelessWidget {
                   text: TextSpan(
                     style: TextStyle(
                       fontFamily: AppTypography.fontFamily,
-                      fontSize: 12,
+                      fontSize: 13,
                       color: isDark ? const Color(0xFFE0E7FF) : const Color(0xFF312E81),
                     ),
                     children: const [
                       TextSpan(
-                        text: 'Team Data Mode (View-Only): ',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        text: 'Team data mode (view-only): ',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                       TextSpan(
-                        text: 'Displaying aggregate team metrics. Creation, editing, approvals, and deletions are strictly disabled.',
+                        text:
+                            'Aggregate team metrics. Creation, editing, approvals and deletions are disabled in this view.',
                       ),
                     ],
                   ),
@@ -1784,7 +1309,7 @@ class _TeamDataModeAlert extends StatelessWidget {
             child: InkWell(
               onTap: onSwitchToMyData,
               child: Text(
-                'Switch to My Data →',
+                'Switch to my data',
                 style: TextStyle(
                   fontFamily: AppTypography.fontFamily,
                   fontSize: 12,
@@ -1801,22 +1326,19 @@ class _TeamDataModeAlert extends StatelessWidget {
   }
 }
 
-/// A quiet inline notice shown when the API denies team_data and the screen
-/// falls back to the My Data payload — informational, never an error state.
 class _ScopeNotice extends StatelessWidget {
   const _ScopeNotice();
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: cs.onSurface.withValues(
-            alpha: cs.brightness == Brightness.dark ? 0.08 : 0.04,
-          ),
+          color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.04),
           borderRadius: BorderRadius.circular(AppColors.radiusMd),
           border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
         ),
@@ -1840,70 +1362,10 @@ class _ScopeNotice extends StatelessWidget {
   }
 }
 
-/// One circular action inside the floating dock.
-class _DockAction extends StatelessWidget {
-  const _DockAction(
-    this.context, {
-    required this.icon,
-    required this.onTap,
-    this.primary = false,
-  });
-
-  final BuildContext context;
-  final Widget icon;
-  final VoidCallback onTap;
-  final bool primary;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    final accent = primary ? cs.primary : cs.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.all(5),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppColors.radiusXl),
-          child: Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: primary
-                  ? (isDark ? AppColors.brandDark : AppColors.brand)
-                  : cs.onSurface.withValues(alpha: isDark ? 0.12 : 0.07),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 2,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Center(
-              child: IconTheme(
-                data: IconThemeData(
-                  color: primary ? Colors.white : accent,
-                  size: 20,
-                ),
-                child: icon,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Spec §4.1: Collected vs Due card showing collected revenue, due/pending amount and conversion progress.
 class _CollectedVsDueCard extends StatelessWidget {
-  const _CollectedVsDueCard({required this.summary, required this.onTap});
+  const _CollectedVsDueCard({required this.summary});
 
   final m.DashboardSummary summary;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1914,12 +1376,14 @@ class _CollectedVsDueCard extends StatelessWidget {
         ? summary.pendingAmount
         : (summary.closingValue - collected).clamp(0.0, double.infinity);
     final total = collected + due;
-    final ratio = total > 0 ? (collected / total).clamp(0.0, 1.0) : 1.0;
+    // When there is genuinely nothing collected or due, the card should read
+    // "no activity", not a full green bar and a fake "100% settled".
+    final hasActivity = total > 0;
+    final ratio = hasActivity ? (collected / total).clamp(0.0, 1.0) : 0.0;
     final percent = (ratio * 100).toInt();
 
     return AppCard.surface(
       context,
-      onTap: onTap,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1940,13 +1404,12 @@ class _CollectedVsDueCard extends StatelessWidget {
                       size: 13,
                       color: StatusPalette.success(cs),
                     ),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     Text(
-                      'COLLECTED VS DUE',
+                      'Collected vs due',
                       style: AppTypography.caption.copyWith(
                         fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w600,
                         color: StatusPalette.success(cs),
                       ),
                     ),
@@ -1961,7 +1424,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  '$percent% Settled',
+                  hasActivity ? '$percent% settled' : 'No activity yet',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
@@ -1969,15 +1432,9 @@ class _CollectedVsDueCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 11,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1987,7 +1444,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Collected Revenue',
+                      'Collected revenue',
                       style: AppTypography.caption.copyWith(
                         color: cs.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
@@ -1997,10 +1454,10 @@ class _CollectedVsDueCard extends StatelessWidget {
                     Text(
                       Fmt.money(collected),
                       style: AppTypography.statNumeric.copyWith(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
                         color: StatusPalette.success(cs),
-                        letterSpacing: -0.6,
+                        letterSpacing: -0.4,
                       ),
                     ),
                   ],
@@ -2012,7 +1469,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Due / Pending',
+                      'Due / pending',
                       style: AppTypography.caption.copyWith(
                         color: cs.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
@@ -2033,24 +1490,22 @@ class _CollectedVsDueCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          // Conversion progress bar
+          const SizedBox(height: 16),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: ratio,
               minHeight: 6,
               backgroundColor: StatusPalette.warning(cs).withValues(alpha: 0.2),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                StatusPalette.success(cs),
-              ),
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(StatusPalette.success(cs)),
             ),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
               Text(
-                'Pipeline closing: ${Fmt.money(summary.closingValue)}',
+                'Closing value ${Fmt.money(summary.closingValue)}',
                 style: AppTypography.caption.copyWith(
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
@@ -2059,7 +1514,7 @@ class _CollectedVsDueCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '${summary.totalOrders} total orders',
+                '${summary.totalOrders} orders',
                 style: AppTypography.caption.copyWith(
                   fontSize: 11,
                   color: cs.onSurfaceVariant,
@@ -2073,129 +1528,96 @@ class _CollectedVsDueCard extends StatelessWidget {
   }
 }
 
-/// A clean 6-month bar chart drawn with plain widgets (no shader cost).
+/// A muted 6-month bar chart drawn with plain widgets.
 class _Chart extends StatelessWidget {
-  const _Chart(this.points);
+  const _Chart(this.points, {required this.isDark, required this.cs});
 
   final List<m.DashboardChartPoint> points;
+  final bool isDark;
+  final ColorScheme cs;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
     final maxOrders = points.isEmpty
         ? 1
         : points
-              .map((p) => p.orders)
-              .reduce((a, b) => a > b ? a : b)
-              .clamp(1, 99999);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF262626) : const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(AppColors.radiusMd),
-        border: Border.all(
-          color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: (isDark ? AppColors.brandDark : AppColors.brand)
-                      .withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(AppColors.radiusSm),
-                ),
-                child: Icon(
-                  Icons.bar_chart_rounded,
-                  size: 16,
-                  color: isDark ? AppColors.brandDark : AppColors.brand,
+            .map((p) => p.orders)
+            .reduce((a, b) => a > b ? a : b)
+            .clamp(1, 99999);
+
+    final barBase = isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5);
+    final barAccent = isDark ? AppColors.brandDark : AppColors.brand;
+
+    // No inner card: the section already sits in an AppCard, so the chart
+    // draws directly on the card surface (card-in-card read as heavy).
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Monthly orders',
+                style: AppTypography.caption.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
                 ),
               ),
-              const SizedBox(width: 8),
+            ),
+            Text(
+              'Last 6 months',
+              style: AppTypography.caption.copyWith(
+                fontSize: 11,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (int i = 0; i < points.length; i++)
+              _chartBar(
+                p: points[i],
+                isLast: i == points.length - 1,
+                maxOrders: maxOrders,
+                barBase: barBase,
+                barAccent: barAccent,
+              ),
+          ],
+        ),
+        if (points.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Divider(
+            height: 1,
+            color: cs.outlineVariant.withValues(alpha: isDark ? 0.15 : 0.4),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Text(
-                'Monthly Order Volume',
-                style: AppTypography.cardTitle.copyWith(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
+                points.last.month.isNotEmpty ? points.last.month : 'Latest',
+                style: AppTypography.caption.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.05),
-                  borderRadius: BorderRadius.circular(AppColors.radiusSm),
-                ),
-                child: Text(
-                  'Last 6 mo',
-                  style: AppTypography.caption.copyWith(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant,
-                  ),
+              Text(
+                '${points.last.orders} ${points.last.orders == 1 ? 'order' : 'orders'} • ${Fmt.money(points.last.closingValue)}',
+                style: AppTypography.statNumericSmall.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: barAccent,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (int i = 0; i < points.length; i++)
-                _chartBar(
-                  p: points[i],
-                  isLast: i == points.length - 1,
-                  maxOrders: maxOrders,
-                  cs: cs,
-                  isDark: isDark,
-                ),
-            ],
-          ),
-          if (points.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Divider(
-              height: 1,
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.15 : 0.4),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Text(
-                  'Current month activity',
-                  style: AppTypography.caption.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${points.last.orders} orders',
-                  style: AppTypography.caption.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  Fmt.money(points.last.closingValue),
-                  style: AppTypography.statNumericSmall.copyWith(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? AppColors.brandDark : AppColors.brand,
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
-      ),
+      ],
     );
   }
 
@@ -2203,10 +1625,12 @@ class _Chart extends StatelessWidget {
     required m.DashboardChartPoint p,
     required bool isLast,
     required int maxOrders,
-    required ColorScheme cs,
-    required bool isDark,
+    required Color barBase,
+    required Color barAccent,
   }) {
-    final heightFactor = (p.orders / maxOrders).clamp(0.06, 1.0);
+    final isZero = p.orders == 0;
+    final heightFactor = isZero ? 0.0 : (p.orders / maxOrders).clamp(0.12, 1.0);
+    final color = isLast ? barAccent : barBase;
 
     return Expanded(
       child: Column(
@@ -2215,68 +1639,343 @@ class _Chart extends StatelessWidget {
             '${p.orders}',
             style: AppTypography.statNumericSmall.copyWith(
               fontSize: 11,
-              fontWeight: isLast ? FontWeight.w700 : FontWeight.w500,
-              color: isLast
-                  ? (isDark ? AppColors.brandDark : AppColors.brand)
-                  : cs.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 74,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: FractionallySizedBox(
-                heightFactor: heightFactor,
-                child: Container(
-                  width: 24,
-                  decoration: BoxDecoration(
-                    color: isLast
-                        ? (isDark ? AppColors.brandDark : AppColors.brand)
-                        : cs.primary.withValues(alpha: isDark ? 0.45 : 0.35),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(6),
-                    ),
-                    boxShadow: isLast
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x0D000000),
-                              blurRadius: 2,
-                              offset: Offset(0, 1),
-                            ),
-                          ]
-                        : null,
-                  ),
-                ),
-              ),
+              fontWeight: isLast ? FontWeight.w600 : FontWeight.w500,
+              color: isLast ? barAccent : cs.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isLast ? 6 : 2,
-              vertical: isLast ? 2 : 0,
+          SizedBox(
+            height: 72,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: isZero
+                  ? // Empty months get a small baseline tick, not a broken
+                    // sliver — every column reads as "0" on purpose.
+                    Container(
+                      width: 24,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: barBase,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    )
+                  : FractionallySizedBox(
+                      heightFactor: heightFactor,
+                      child: Container(
+                        width: 24,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
             ),
-            decoration: isLast
-                ? BoxDecoration(
-                    color: (isDark ? AppColors.brandDark : AppColors.brand)
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(4),
-                  )
-                : null,
-            child: Text(
-              p.month,
-              style: AppTypography.caption.copyWith(
-                color: isLast
-                    ? (isDark ? AppColors.brandDark : AppColors.brand)
-                    : cs.onSurfaceVariant,
-                fontWeight: isLast ? FontWeight.w700 : FontWeight.w500,
-                fontSize: 10.5,
-              ),
+          ),
+          const SizedBox(height: 8),
+          // Short month name only ("Nov"): the full "Nov 2026" label is
+          // wider than a 6th-of-the-row and collides with its neighbours.
+          // The footer line below already carries the full month + figures.
+          Text(
+            p.month.split(' ').first.isEmpty ? p.month : p.month.split(' ').first,
+            style: AppTypography.caption.copyWith(
+              color: isLast ? barAccent : cs.onSurfaceVariant,
+              fontWeight: isLast ? FontWeight.w600 : FontWeight.w500,
+              fontSize: 11,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Bottom-sheet notifications list: fetches the full unread set from the
+/// notifications endpoint, supports per-item and mark-all read.
+class _NotificationsPanel extends StatefulWidget {
+  const _NotificationsPanel({
+    required this.services,
+    required this.initialUnread,
+  });
+
+  final AppServices services;
+  final int initialUnread;
+
+  @override
+  State<_NotificationsPanel> createState() => _NotificationsPanelState();
+}
+
+class _NotificationsPanelState extends State<_NotificationsPanel> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final res = await widget.services.api.notifications(perPage: 50);
+      if (!mounted) return;
+      setState(() {
+        _items = (res['data'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Could not load notifications. Pull to retry.';
+      });
+    }
+  }
+
+  Future<void> _markRead(int index, String id) async {
+    try {
+      await widget.services.api.markNotificationRead(id);
+      if (!mounted) return;
+      setState(() {
+        _items[index] = {..._items[index], 'read_at': DateTime.now().toIso8601String()};
+      });
+    } catch (_) {
+      // Quiet failure — the list already shows the item.
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      await widget.services.api.markAllNotificationsRead();
+      if (!mounted) return;
+      setState(() {
+        for (int i = 0; i < _items.length; i++) {
+          if (_items[i]['read_at'] == null) {
+            _items[i] = {..._items[i], 'read_at': DateTime.now().toIso8601String()};
+          }
+        }
+      });
+    } catch (_) {}
+  }
+
+  bool _isRead(Map<String, dynamic> n) => n['read_at'] != null;
+
+  String _titleOf(Map<String, dynamic> n) {
+    final data = n['data'] as Map<String, dynamic>? ?? const {};
+    return (data['title'] as String?) ??
+        ((n['type'] as String? ?? 'Notification').split('.').last);
+  }
+
+  String _messageOf(Map<String, dynamic> n) {
+    final data = n['data'] as Map<String, dynamic>? ?? const {};
+    final msg = data['message'] as String?;
+    return (msg == null || msg.isEmpty) ? '—' : msg;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
+    final ink = isDark ? Colors.white : const Color(0xFF171717);
+    final muted = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+    final divider = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
+    final unread = _items.where((n) => !_isRead(n)).length;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                border: Border(bottom: BorderSide(color: divider)),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    'Notifications',
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: ink,
+                    ),
+                  ),
+                  if (unread > 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDC2626),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '$unread',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (unread > 0)
+                    TextButton(
+                      onPressed: _markAllRead,
+                      child: Text(
+                        'Mark all read',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: cs.primary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            // Body
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator.adaptive())
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!,
+                                    style: TextStyle(
+                                        fontSize: 13, color: muted)),
+                                const SizedBox(height: 12),
+                                AppPrimaryButton(
+                                  label: 'Retry',
+                                  onPressed: _load,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : _items.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No notifications yet',
+                                style: TextStyle(fontSize: 13, color: muted),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: scrollController,
+                              itemCount: _items.length,
+                              itemBuilder: (_, i) {
+                                final n = _items[i];
+                                final read = _isRead(n);
+                                return InkWell(
+                                  onTap: read
+                                      ? null
+                                      : () => _markRead(i, n['id'] as String),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              margin: const EdgeInsets.only(
+                                                  top: 6),
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: read
+                                                    ? divider
+                                                    : const Color(0xFFDC2626),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                _titleOf(n),
+                                                style: TextStyle(
+                                                  fontFamily: AppTypography
+                                                      .fontFamily,
+                                                  fontSize: 13,
+                                                  fontWeight: read
+                                                      ? FontWeight.w500
+                                                      : FontWeight.w600,
+                                                  color: read ? muted : ink,
+                                                ),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                              left: 17),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _messageOf(n),
+                                                style: TextStyle(
+                                                  fontFamily:
+                                                      AppTypography
+                                                          .fontFamily,
+                                                  fontSize: 12,
+                                                  color: muted,
+                                                ),
+                                                maxLines: 2,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                              ),
+                                              if (n['created_at'] != null) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  Fmt.relative(n['created_at']
+                                                      as String?),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: cs.outlineVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:veneer/veneer.dart';
 
 import 'app_colors.dart';
 import 'app_typography.dart';
@@ -63,30 +61,6 @@ class AppTheme {
       visualDensity: VisualDensity.adaptivePlatformDensity,
       textTheme: AppTypography.textTheme(),
       splashFactory: InkSparkle.splashFactory,
-      extensions: [
-        if (isDark)
-          VeneerFallbackStyle.iosDark.copyWith(
-            accent: AppColors.brandDark,
-            surface: AppColors.surfaceElevatedDark,
-            innerSurface: const Color(0xFF262626),
-            border: Colors.white.withValues(alpha: 0.08),
-            label: Colors.white,
-            secondaryLabel: const Color(0x99A3A3A3),
-            selection: AppColors.brandDark.withValues(alpha: 0.14),
-            badge: AppColors.dangerDark,
-          )
-        else
-          VeneerFallbackStyle.iosLight.copyWith(
-            accent: AppColors.brand,
-            surface: AppColors.surfaceElevatedLight,
-            innerSurface: const Color(0xFFF5F5F5),
-            border: const Color(0x14000000),
-            label: const Color(0xFF171717),
-            secondaryLabel: const Color(0x99737373),
-            selection: AppColors.brand.withValues(alpha: 0.12),
-            badge: AppColors.dangerLight,
-          ),
-      ],
 
       scaffoldBackgroundColor: isDark
           ? AppColors.neutralBgDark
@@ -260,48 +234,5 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
     );
-  }
-}
-
-/// Persisted theme-mode service. `null` = follow system.
-class ThemeService {
-  ThemeService._();
-
-  static const _key = 'leadx_theme_mode';
-  static const _keyAccent = 'leadx_use_glass';
-
-  static Future<ThemeMode> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    switch (prefs.getString(_key)) {
-      case 'light':
-        return ThemeMode.light;
-      case 'dark':
-        return ThemeMode.dark;
-      default:
-        return ThemeMode.system;
-    }
-  }
-
-  static Future<void> save(ThemeMode mode) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mode == ThemeMode.system) {
-      await prefs.remove(_key);
-    } else {
-      await prefs.setString(_key, mode.name);
-    }
-  }
-
-  /// Liquid-glass chrome toggle (Profile → Settings). The glass package is
-  /// always initialised; this only switches the shell's chrome between
-  /// liquid-glass and solid Material so lower-end devices can back out
-  /// without losing the design.
-  static Future<bool> glassEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyAccent) ?? true;
-  }
-
-  static Future<void> setGlassEnabled(bool on) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyAccent, on);
   }
 }

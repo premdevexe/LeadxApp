@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:veneer/veneer.dart';
 
 import '../design/app_colors.dart';
-import '../design/app_typography.dart';
+import '../design/native_chrome.dart' show NativeIcon;
 
-/// Shows an iOS 26 Liquid Glass native notification banner above the app chrome.
-/// If running on Android or older iOS where native banners are unavailable,
-/// falls back to a clean, quiet [SnackBar].
+/// Shows a quiet [SnackBar] banner.
+///
+/// The iOS-26 native banner chrome is retired; every call site now gets a
+/// clean, solid [SnackBar] with the same title / subtitle / body content.
+/// The [icon] and [onTap] are accepted for call-site compatibility — the
+/// solid snackbar simply ignores them.
 Future<void> showLeadxBanner(
   BuildContext context, {
   required String title,
@@ -18,45 +20,26 @@ Future<void> showLeadxBanner(
   final cs = Theme.of(context).colorScheme;
   final isDark = cs.brightness == Brightness.dark;
 
-  final shown = await showNativeBanner(
-    title: title,
-    subtitle: subtitle,
-    body: body,
-    icon: icon ?? const NativeIcon.symbol('bell.fill', fallback: Icons.notifications),
-    style: NativeBannerStyle(
-      dark: isDark,
-      tint: cs.primary.withValues(alpha: 0.15),
-      titleStyle: AppTypography.cardTitle.copyWith(
-        fontWeight: FontWeight.w700,
-        color: cs.onSurface,
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          if (subtitle != null)
+            Text(subtitle, style: const TextStyle(fontSize: 12)),
+          if (body != null)
+            Text(body, style: const TextStyle(fontSize: 12)),
+        ],
       ),
-      subtitleStyle: AppTypography.caption.copyWith(
-        color: cs.onSurfaceVariant,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
       ),
-      bodyStyle: AppTypography.body.copyWith(
-        color: cs.onSurface,
-        fontSize: 13,
-      ),
+      backgroundColor:
+          isDark ? AppColors.surfaceElevatedDark : AppColors.surfaceElevatedLight,
     ),
-    onTap: onTap,
   );
-
-  if (!shown && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-            if (body != null)
-              Text(body, style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: isDark ? AppColors.surfaceElevatedDark : AppColors.surfaceElevatedLight,
-      ),
-    );
-  }
 }

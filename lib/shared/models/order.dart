@@ -48,8 +48,13 @@ class Order {
   final double? discountAmount;
   final double closingValue;
   final double? amountReceived;
+  final String? paymentMethod;
   final String paymentStatus;
   final String orderStatus;
+  final String? closingValueStatus;
+  final String? closingApprovalNotes;
+  final double? minimumClosingPriceSnapshot;
+  final String? assignedEmployeeName;
   final bool legacyFlag;
   final OrderSubscription? subscription;
   final String createdAt;
@@ -75,8 +80,13 @@ class Order {
     this.discountAmount,
     required this.closingValue,
     this.amountReceived,
+    this.paymentMethod,
     required this.paymentStatus,
     required this.orderStatus,
+    this.closingValueStatus,
+    this.closingApprovalNotes,
+    this.minimumClosingPriceSnapshot,
+    this.assignedEmployeeName,
     this.legacyFlag = false,
     this.subscription,
     required this.createdAt,
@@ -103,11 +113,23 @@ class Order {
         discountAmount: doubleFromJson(json['discount_amount']),
         closingValue: doubleFromJson(json['closing_value']) ?? 0,
         amountReceived: doubleFromJson(json['amount_received']),
+        paymentMethod: json['payment_method'] as String?,
         paymentStatus: json['payment_status'] as String? ?? '',
         orderStatus: json['order_status'] as String? ?? '',
+        closingValueStatus: json['closing_value_status'] as String? ??
+            json['closing_status'] as String?,
+        closingApprovalNotes: json['closing_approval_notes'] as String?,
+        minimumClosingPriceSnapshot:
+            doubleFromJson(json['minimum_closing_price_snapshot']),
+        assignedEmployeeName: json['assigned_employee'] is Map
+            ? ((json['assigned_employee'] as Map)['name'] ??
+                    (json['assigned_employee'] as Map)['username'])
+                as String?
+            : json['assigned_employee_name'] as String?,
         legacyFlag: json['legacy_flag'] == true,
         subscription: json['subscription'] is Map<String, dynamic>
-            ? OrderSubscription.fromJson(json['subscription'] as Map<String, dynamic>)
+            ? OrderSubscription.fromJson(
+                json['subscription'] as Map<String, dynamic>)
             : null,
         createdAt: json['created_at'] as String? ?? '',
         updatedAt: json['updated_at'] as String? ?? '',

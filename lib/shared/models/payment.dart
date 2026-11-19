@@ -16,6 +16,7 @@ class Payment {
   final String? verifiedAt;
   final String? adminNotes;
   final String? createdAt;
+  final String? orderNumber;
 
   Payment({
     required this.id,
@@ -32,6 +33,7 @@ class Payment {
     this.verifiedAt,
     this.adminNotes,
     this.createdAt,
+    this.orderNumber,
   });
 
   factory Payment.fromJson(Map<String, dynamic> json) => Payment(
@@ -49,5 +51,8 @@ class Payment {
         verifiedAt: json['verified_at'] as String?,
         adminNotes: json['admin_notes'] as String?,
         createdAt: json['created_at'] as String?,
+        orderNumber: json['order'] is Map
+            ? (json['order'] as Map)['order_number'] as String?
+            : json['order_number'] as String?,
       );
 }

@@ -206,14 +206,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
-  flutter_liquid_glass_kit:
-    dependency: "direct main"
-    description:
-      name: flutter_liquid_glass_kit
-      sha256: "4ae70283f680625644e5c3f832cf0f6c515f608c7d04de170e47dfa1b757d872"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.1"
   flutter_local_notifications:
     dependency: "direct main"
     description:
@@ -303,7 +295,7 @@ packages:
     source: hosted
     version: "4.2.2"
   flutter_svg:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flutter_svg
       sha256: "455a22036f8d1b7c74f53283c8644d6af2f6f7c9ec72c7b06a2ff70fb3954a54"
@@ -408,14 +400,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.0"
-  liquid_glass_widgets:
-    dependency: "direct main"
-    description:
-      name: liquid_glass_widgets
-      sha256: "40c3f19a89b40166641cf205ff9ee883f45c0a54c1a0652e00bda8b07f82281c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.17.5"
   logging:
     dependency: transitive
     description:
@@ -813,14 +797,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.0"
-  veneer:
-    dependency: "direct main"
-    description:
-      name: veneer
-      sha256: "087b369f1eebe9fbc5c2cedf2d4986ee45b4b6c212bd082facfb52e9de5c8840"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.24.0"
   vm_service:
     dependency: transitive
     description:
@@ -887,4 +863,4 @@ packages:
     version: "3.1.4"
 sdks:
   dart: ">=3.13.5 <4.0.0"
-  flutter: ">=3.47.0"
+  flutter: ">=3.44.0"

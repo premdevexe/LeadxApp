@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:veneer/veneer.dart';
+import '../../core/design/native_chrome.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
@@ -306,17 +306,79 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   AppCard.surface(
                     context,
                     margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     color: cs.tertiaryContainer,
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.lock_outline, size: 16,
+                        Icon(Icons.info_outline, size: 18,
                             color: cs.onTertiaryContainer),
                         const SizedBox(width: 8),
                         Expanded(
-                            child: Text('Read-only (team data)',
-                                style: AppTypography.secondary
-                                    .copyWith(color: cs.onTertiaryContainer))),
+                          child: Text(
+                            'Team Data Mode (View-Only): You are inspecting a team member\'s order under an authorized historical window grant. All modification, payment verification, and approval actions are disabled.',
+                            style: AppTypography.caption
+                                .copyWith(color: cs.onTertiaryContainer, height: 1.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // ── Rejection & Resubmission Card (§4.2) ──
+                if (order.closingValueStatus == 'Rejected' && !viewOnly)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade300),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.error_outline, size: 16, color: Colors.red.shade800),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Closing Value Rejected by Super Admin:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Colors.red.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (order.closingApprovalNotes != null &&
+                            order.closingApprovalNotes!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '"${order.closingApprovalNotes}"',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.red.shade800,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => _showResubmitDialog(order),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                            child: const Text('Adjust & Resubmit Closing Value'),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -458,6 +520,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      if (order.productValue != null || order.productPriceSnapshot != null)
+                        _kv(context, 'Product value', Fmt.money(order.productPriceSnapshot ?? order.productValue ?? 0)),
+                      if (order.discountAmount != null && order.discountAmount! > 0)
+                        _kv(context, 'Discount', Fmt.money(order.discountAmount!), valueColor: StatusPalette.warning(cs)),
                       _kv(context, 'Closing value', Fmt.money(order.closingValue)),
                       _kv(
                         context,
@@ -471,6 +537,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         Fmt.money(due),
                         valueColor: due > 0 ? StatusPalette.warning(cs) : StatusPalette.success(cs),
                       ),
+                      if (order.closingValueStatus != null)
+                        _kv(context, 'Closing approval', order.closingValueStatus!),
                     ],
                   ),
                 ),

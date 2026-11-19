@@ -1,29 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import 'app_theme.dart';
-
-/// Owns the persisted light/dark/system preference and the liquid-glass
-/// navigation toggle.
+/// Owns the persisted light/dark/system appearance preference.
 class ThemeController extends ChangeNotifier {
   ThemeMode mode = ThemeMode.system;
-  bool glassEnabled = true;
+
+  static const _key = 'leadx_theme_mode';
 
   Future<void> setMode(ThemeMode next) async {
     mode = next;
     notifyListeners();
-    await ThemeService.save(next);
-  }
-
-  Future<void> setGlassEnabled(bool on) async {
-    glassEnabled = on;
-    notifyListeners();
-    await ThemeService.setGlassEnabled(on);
+    final prefs = await SharedPreferences.getInstance();
+    if (next == ThemeMode.system) {
+      await prefs.remove(_key);
+    } else {
+      await prefs.setString(_key, next.name);
+    }
   }
 
   static Future<ThemeController> init() async {
     final c = ThemeController();
-    c.mode = await ThemeService.load();
-    c.glassEnabled = await ThemeService.glassEnabled();
+    final prefs = await SharedPreferences.getInstance();
+    switch (prefs.getString(_key)) {
+      case 'light':
+        c.mode = ThemeMode.light;
+      case 'dark':
+        c.mode = ThemeMode.dark;
+      default:
+        c.mode = ThemeMode.system;
+    }
     return c;
   }
 }

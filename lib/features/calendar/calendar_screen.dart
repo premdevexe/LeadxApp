@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:veneer/veneer.dart';
+import '../../core/design/native_chrome.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';

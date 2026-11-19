@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_liquid_glass_kit/flutter_liquid_glass_kit.dart';
 
 import '../../core/design/app_colors.dart';
-import '../../core/design/lead_glass.dart';
 import '../../core/design/app_typography.dart';
 import '../format.dart';
 import '../models/subscription.dart' show ListMeta;
@@ -10,20 +8,14 @@ import '../models/subscription.dart' show ListMeta;
 /// Small, reusable UI pieces shared across feature screens.
 ///
 /// Content surfaces are flat SaaS cards: solid white (light) / near-black
-/// (dark) with a 1px light-grey border and a subtle shadow, on a #FAFAFA app
-/// background. [LeadGlass.enabled] is forced off app-wide, so
-/// [AppCard.surface] always takes its solid branch — the glass kit code path
-/// below is kept inert as a back-out, never rendered.
+/// (dark) with a 1px hairline border and a subtle shadow, on a #FAFAFA
+/// app background.
 
-/// A Liquid Glass content card. All list rows and dashboard cards use
-/// this so light/dark surfaces, borders and radii stay consistent.
 class AppCard {
   const AppCard._();
 
-  /// The solid decoration used everywhere (the glass gate is forced off, so
-  /// this is what actually renders): a flat SaaS card — white (light) or
-  /// near-black (dark) surface, 1px #E5E5E5 (light) / 8% white (dark)
-  /// border, subtle 0 1px 2px rgba(0,0,0,.05) shadow.
+  /// A flat SaaS card — white (light) or near-black (dark) surface, 1px
+  /// hairline border, subtle 0 1px 2px shadow.
   static BoxDecoration decorationOf(
     BuildContext context, {
     Color? color,
@@ -31,14 +23,13 @@ class AppCard {
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = cs.brightness == Brightness.dark;
-    final borderColor = isDark
-        ? cs.onSurface.withValues(alpha: 0.08)
-        : const Color(0xFFE5E5E5).withValues(alpha: 0.9);
     return BoxDecoration(
       color: color ?? cs.surface,
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(
-        color: isDark ? borderColor : cs.outlineVariant.withValues(alpha: 0.45),
+        color: isDark
+            ? cs.onSurface.withValues(alpha: 0.08)
+            : cs.outlineVariant.withValues(alpha: 0.45),
         width: 1,
       ),
       boxShadow: isDark
@@ -50,9 +41,8 @@ class AppCard {
                 spreadRadius: -4,
               )
             ]
-          : [
-              // Subtle 0 1px 2px rgba(0,0,0,.05) card shadow.
-              const BoxShadow(
+          : const [
+              BoxShadow(
                 color: Color(0x0D000000),
                 blurRadius: 2,
                 offset: Offset(0, 1),
@@ -61,9 +51,7 @@ class AppCard {
     );
   }
 
-  /// A rounded content surface. The "Liquid Glass" preference is inert
-  /// (forced off app-wide), so this always renders the flat solid card
-  /// above; the [LiquidGlassCard] branch is dead back-out code.
+  /// A rounded content surface with an optional tap target.
   static Widget surface(
     BuildContext context, {
     required Widget child,
@@ -73,9 +61,7 @@ class AppCard {
     VoidCallback? onTap,
     double radius = AppColors.radiusMd,
   }) {
-    final glassOn = LeadGlass.enabled(context);
     final shape = BorderRadius.circular(radius);
-
     final ink = Material(
       type: MaterialType.transparency,
       child: InkWell(
@@ -84,29 +70,16 @@ class AppCard {
         child: Padding(padding: padding, child: child),
       ),
     );
-
-    if (!glassOn) {
-      return Container(
-        margin: margin,
-        decoration: decorationOf(context, color: color, radius: radius),
-        child: ink,
-      );
-    }
-
-    // Colour-tinted surfaces (banners, highlights) become glass with the
-    // same hue; plain surfaces stay adaptive matte glass.
-    final tintOpacity = color != null ? 0.30 : null;
-    return LiquidGlassCard(
-      settings: LeadGlass.settingsFor(context, tint: color, tintOpacity: tintOpacity),
-      borderRadius: shape,
-      padding: EdgeInsets.zero,
+    return Container(
       margin: margin,
+      decoration: decorationOf(context, color: color, radius: radius),
       child: ink,
     );
   }
 
-  /// Compact stat tile for the dashboard grid. The value is rendered with
-  /// tabular figures so money + counts never reflow.
+  /// Compact stat tile: a label, one figure and an optional change line.
+  /// Compact stat tile: an optional icon medallion + label, one figure in
+  /// tabular figures, an optional change line. [color] tints the accent.
   static Widget stat(
     BuildContext context, {
     required String label,
@@ -210,7 +183,8 @@ class AppCard {
           Expanded(
             child: Padding(
               padding: EdgeInsets.only(bottom: bottom),
-              child: Text(title, style: AppTypography.sectionTitle.copyWith(color: cs.onSurface)),
+              child: Text(title,
+                  style: AppTypography.sectionTitle.copyWith(color: cs.onSurface)),
             ),
           ),
           ?trailing,
@@ -245,7 +219,6 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Neutral icon medallion — flat SaaS, no colour wash.
             Container(
               width: 64,
               height: 64,
@@ -253,19 +226,14 @@ class EmptyState extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
-              child: Icon(
-                icon ?? Icons.inbox_outlined,
-                size: 28,
-                color: cs.onSurfaceVariant,
-              ),
+              child:
+                  Icon(icon ?? Icons.inbox_outlined, size: 28, color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             Text(
               title,
-              style: AppTypography.cardTitle.copyWith(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
+              style:
+                  AppTypography.cardTitle.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 4),
@@ -316,8 +284,6 @@ class ErrorBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    // Flat red tint (red-50 bg / red-800 ink on light; quiet alpha wash
-    // in dark) — the only status-coloured banner surface in the app.
     final tint = StatusPalette.dangerTint(cs);
     return AppCard.surface(
       context,
@@ -386,16 +352,13 @@ Color statusColorOf(BuildContext context, String raw) {
 }
 
 class StatusChip extends StatelessWidget {
-  const StatusChip(this.status,
-      {super.key, this.color, this.compact = false, this.dot = false});
+  const StatusChip(this.status, {super.key, this.color, this.compact = false, this.dot = false});
 
   final String status;
   final Color? color;
   final bool compact;
 
   /// Dense-list variant: a leading status dot instead of a bordered pill.
-  /// The dot carries the semantic colour; the label stays neutral ink so
-  /// 48px list rows keep a quiet, flat look.
   final bool dot;
 
   @override
@@ -435,11 +398,8 @@ class StatusChip extends StatelessWidget {
       );
     }
 
-    // Pill: tinted 5xx background + 8xx ink (web status colours) via
-    // StatusPalette; a custom [color] tints the pill from that hue.
-    final StatusTint tint = color != null
-        ? StatusTint(bg: c.withValues(alpha: 0.12), ink: c)
-        : StatusPalette.tintOf(cs, status);
+    final StatusTint tint =
+        color != null ? StatusTint(bg: c.withValues(alpha: 0.12), ink: c) : StatusPalette.tintOf(cs, status);
 
     return Container(
       padding: compact
@@ -447,7 +407,7 @@ class StatusChip extends StatelessWidget {
           : const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: tint.bg,
-        borderRadius: BorderRadius.circular(999), // full pill
+        borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
@@ -463,7 +423,7 @@ class StatusChip extends StatelessWidget {
   }
 }
 
-/// Pull-to-refresh + paginated list scaffold used by every list screen.
+/// Pull-to-refresh + paginated list scaffold used by list screens.
 class PaginatedList<T> extends StatelessWidget {
   const PaginatedList({
     super.key,
@@ -493,10 +453,8 @@ class PaginatedList<T> extends StatelessWidget {
   bool get _hasMore => (meta != null && meta!.currentPage < meta!.lastPage);
 
   /// True when the API silently downgraded a requested team_data view to
-  /// my_data (carried on [ListMeta.warning]) — the list still renders the
-  /// returned My Data, with an unobtrusive notice so the user knows.
-  bool get _teamDowngraded =>
-      meta?.warning?.trim().isNotEmpty ?? false;
+  /// my_data (carried on [ListMeta.warning]).
+  bool get _teamDowngraded => meta?.warning?.trim().isNotEmpty ?? false;
 
   @override
   Widget build(BuildContext context) {
@@ -513,8 +471,6 @@ class PaginatedList<T> extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return ListView.builder(
-      // +1 slots reserved for the load-more footer; +1 more when a team
-      // data fallback notice is pinned above the list body.
       itemCount: items.length + (_hasMore ? 1 : 0) + (_teamDowngraded ? 1 : 0),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemBuilder: (context, index) {
@@ -569,7 +525,7 @@ class PaginatedList<T> extends StatelessWidget {
   }
 }
 
-/// A horizontal filter chip row (subscriptions / follow-ups / issues).
+/// A horizontal filter chip row.
 class FilterChipRow extends StatelessWidget {
   const FilterChipRow({
     super.key,
@@ -608,7 +564,7 @@ class FilterChipRow extends StatelessWidget {
   }
 }
 
-/// Consistent "title + optional subtitle" row for detail screens.
+/// Consistent "label + value" row for detail screens.
 class DetailRow extends StatelessWidget {
   const DetailRow({super.key, required this.label, required this.value, this.tabular = false});
 
@@ -626,7 +582,8 @@ class DetailRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 130,
-            child: Text(label, style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant)),
+            child: Text(label,
+                style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant)),
           ),
           Expanded(
             child: Text(
@@ -644,8 +601,7 @@ class DetailRow extends StatelessWidget {
   }
 }
 
-/// The "My Data / Team Data" segment control used across screens
-/// (Dashboard, Orders, Subscriptions, Payments, Customers, Reports).
+/// The "My Data / Team Data" segment control used across screens.
 class DataScopeSegmentControl extends StatelessWidget {
   const DataScopeSegmentControl({
     super.key,
@@ -659,11 +615,10 @@ class DataScopeSegmentControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isMyData = selectedView == 'my_data';
 
     return Container(
-      height: 38,
-      padding: const EdgeInsets.all(3),
+      height: 40,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
         borderRadius: BorderRadius.circular(AppColors.radiusMd),
@@ -676,76 +631,15 @@ class DataScopeSegmentControl extends StatelessWidget {
         type: MaterialType.transparency,
         child: Row(
           children: [
-            Expanded(
-              child: InkWell(
-                onTap: isMyData ? null : () => onChanged('my_data'),
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isMyData
-                        ? (isDark ? const Color(0xFF383838) : Colors.white)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: isMyData && !isDark
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x0D000000),
-                              blurRadius: 2,
-                              offset: Offset(0, 1),
-                            )
-                          ]
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'My Data',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      fontWeight: isMyData ? FontWeight.w600 : FontWeight.w500,
-                      color: isMyData
-                          ? (isDark ? Colors.white : AppColors.brand)
-                          : (isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373)),
-                    ),
-                  ),
+            for (final (view, label) in [('my_data', 'My data'), ('team_data', 'Team data')])
+              Expanded(
+                child: _SegmentPill(
+                  label: label,
+                  active: view == selectedView,
+                  isDark: isDark,
+                  onTap: view == selectedView ? null : () => onChanged(view),
                 ),
               ),
-            ),
-            Expanded(
-              child: InkWell(
-                onTap: !isMyData ? null : () => onChanged('team_data'),
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: !isMyData
-                        ? (isDark ? const Color(0xFF383838) : Colors.white)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: !isMyData && !isDark
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x0D000000),
-                              blurRadius: 2,
-                              offset: Offset(0, 1),
-                            )
-                          ]
-                        : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'Team Data',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      fontWeight: !isMyData ? FontWeight.w600 : FontWeight.w500,
-                      color: !isMyData
-                          ? (isDark ? Colors.white : AppColors.brand)
-                          : (isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373)),
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -753,7 +647,60 @@ class DataScopeSegmentControl extends StatelessWidget {
   }
 }
 
-/// Black primary button matching the LeadX web design system (neutral-900 #171717).
+class _SegmentPill extends StatelessWidget {
+  const _SegmentPill({
+    required this.label,
+    required this.active,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final bool isDark;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: active ? (isDark ? const Color(0xFF383838) : Colors.white) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: active && !isDark
+                ? const [
+                    BoxShadow(
+                      color: Color(0x0D000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    )
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              color: active
+                  ? (isDark ? Colors.white : AppColors.brand)
+                  : (isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Primary button matching the LeadX design system (neutral-900 in light,
+/// off-white in dark).
 class AppPrimaryButton extends StatelessWidget {
   const AppPrimaryButton({
     super.key,
@@ -794,10 +741,7 @@ class AppPrimaryButton extends StatelessWidget {
             ? const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               )
             : Row(
                 mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
@@ -824,7 +768,7 @@ class AppPrimaryButton extends StatelessWidget {
   }
 }
 
-/// Outlined secondary button with light grey border (#E5E5E5) or destructive text.
+/// Outlined secondary button, or destructive text.
 class AppOutlinedButton extends StatelessWidget {
   const AppOutlinedButton({
     super.key,
@@ -903,11 +847,533 @@ class AppOutlinedButton extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// LeadX Dart UI Components — Direct ports of Blade views & CSS tokens
-// ============================================================================
+/// A quiet, bordered status badge with an optional leading dot.
+class StatusBadge extends StatelessWidget {
+  const StatusBadge({
+    super.key,
+    required this.status,
+    this.label,
+    this.type,
+    this.hasDot = true,
+    this.compact = false,
+    this.ellipsize = false,
+  });
 
-/// Direct Dart port of `stat-card.blade.php` and `.stat-card-featured`.
+  final String status;
+  final String? label;
+  final String? type;
+  final bool hasDot;
+  final bool compact;
+
+  /// When true the label ellipsizes to its parent's width instead of forcing
+  /// the row to grow — safe inside [Flexible] on narrow screens.
+  final bool ellipsize;
+
+  static String resolveType(String raw) {
+    switch (raw.trim().toLowerCase()) {
+      case 'active':
+      case 'verified':
+      case 'success':
+      case 'completed':
+      case 'paid':
+      case 'confirmed':
+      case 'uploaded':
+      case 'fixed':
+      case 'synced':
+        return 'success';
+      case 'pending':
+      case 'scheduled':
+      case 'requested':
+      case 'partially_paid':
+      case 'unverified':
+      case 'expiring':
+      case 'warning':
+        return 'warning';
+      case 'failed':
+      case 'cancelled':
+      case 'canceled':
+      case 'rejected':
+      case 'expired':
+      case 'error':
+      case 'overdue':
+      case 'still_facing':
+      case 'danger':
+        return 'danger';
+      case 'in_progress':
+      case 'rescheduled':
+      case 'info':
+        return 'info';
+      case 'purple':
+        return 'purple';
+      case 'skipped':
+      case 'disabled':
+      case 'draft':
+      case 'inactive':
+      case 'neutral':
+      default:
+        return 'neutral';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (status.trim().isEmpty) return const SizedBox.shrink();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final resolved = type ?? resolveType(status);
+
+    Color bg;
+    Color ink;
+    Color border;
+
+    switch (resolved) {
+      case 'success':
+        bg = isDark ? const Color(0x2815803D) : const Color(0xFFF0FDF4);
+        ink = isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534);
+        border = isDark ? const Color(0x4015803D) : const Color(0xFFBBF7D0);
+        break;
+      case 'warning':
+        bg = isDark ? const Color(0x28D97706) : const Color(0xFFFFFBEB);
+        ink = isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E);
+        border = isDark ? const Color(0x40D97706) : const Color(0xFFFDE68A);
+        break;
+      case 'danger':
+        bg = isDark ? const Color(0x28DC2626) : const Color(0xFFFEF2F2);
+        ink = isDark ? const Color(0xFFF87171) : const Color(0xFF991B1B);
+        border = isDark ? const Color(0x40DC2626) : const Color(0xFFFECACA);
+        break;
+      case 'info':
+        bg = isDark ? const Color(0x282563EB) : const Color(0xFFEFF6FF);
+        ink = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF);
+        border = isDark ? const Color(0x402563EB) : const Color(0xFFBFDBFE);
+        break;
+      case 'purple':
+        bg = isDark ? const Color(0x287C3AED) : const Color(0xFFFAF5FF);
+        ink = isDark ? const Color(0xFFC084FC) : const Color(0xFF6B21A8);
+        border = isDark ? const Color(0x407C3AED) : const Color(0xFFE9D5FF);
+        break;
+      case 'neutral':
+      default:
+        bg = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
+        ink = isDark ? const Color(0xFFD4D4D4) : const Color(0xFF404040);
+        border = isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5);
+        break;
+    }
+
+    final displayLabel = label ??
+        status
+            .replaceAll(RegExp(r'[-_]'), ' ')
+            .split(' ')
+            .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
+            .join(' ');
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 2 : 4,
+      ),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (hasDot) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ink.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          if (ellipsize)
+            Flexible(
+              child: Text(
+                displayLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: compact ? 11 : 12,
+                  fontWeight: FontWeight.w600,
+                  color: ink,
+                  height: 1.2,
+                ),
+              ),
+            )
+          else
+            Text(
+              displayLabel,
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: compact ? 11 : 12,
+                fontWeight: FontWeight.w600,
+                color: ink,
+                height: 1.2,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The sticky app header: flat, quiet chrome.
+///
+/// Layout: menu + wordmark + role chip on the left, a real [PopupMenuButton]
+/// (refresh, notifications, sign out) on the right. The menu actually opens
+/// — no more dead hamburger.
+class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
+  const LeadxNavHeader({
+    super.key,
+    required this.employeeName,
+    this.teamCode,
+    this.unreadCount = 0,
+    this.onMenuTap,
+    this.onRefresh,
+    this.onNotifications,
+    this.onLogout,
+  });
+
+  final String employeeName;
+  final String? teamCode;
+  final int unreadCount;
+
+  /// Opens the navigation drawer (set when the header sits inside a shell
+  /// that owns one; null on the login screen where there is no drawer).
+  final VoidCallback? onMenuTap;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onNotifications;
+  final VoidCallback? onLogout;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(56);
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
+    final ink = isDark ? Colors.white : const Color(0xFF171717);
+    final hairline = isDark ? const Color(0xFF2E2E2E) : const Color(0xFFE5E5E5);
+    // The static role chips only fit on wide screens; the team chip is the
+    // flex part of the row so on narrow screens it squeezes and ellipsizes
+    // instead of pushing the actions off the edge.
+    final wide = MediaQuery.sizeOf(context).width >= 600;
+
+    return Container(
+      color: isDark ? const Color(0xFF171717) : Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          if (onMenuTap != null) ...[
+            Material(
+              type: MaterialType.transparency,
+              child: Tooltip(
+                message: 'Menu',
+                child: InkWell(
+                  onTap: onMenuTap,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.menu_rounded,
+                      size: 20,
+                      color: ink,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          // Brand: the app logo (same asset as the login screen's brand
+          // block), with the "L" tile as the no-logo fallback.
+          SizedBox(
+            height: 28,
+            child: Image.asset(
+              'assets/images/leadx_logo.png',
+              height: 28,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) => Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white : const Color(0xFF171717),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'L',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF171717) : Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'LeadX',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.3,
+              color: ink,
+            ),
+          ),
+          if (wide) ...[
+            const SizedBox(width: 8),
+            Container(width: 1, height: 16, color: hairline),
+            const SizedBox(width: 8),
+            _RoleChip(label: 'Employee', isDark: isDark),
+          ],
+          if (teamCode != null && teamCode!.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            // The team chip is the flex part of the row: on a narrow screen
+            // it squeezes and ellipsizes instead of pushing the actions
+            // (bell / avatar / menu) off the edge.
+            Flexible(
+              child: _RoleChip(
+                label: 'Team $teamCode',
+                isDark: isDark,
+                quiet: !wide,
+                ellipsize: true,
+              ),
+            ),
+          ],
+          const Spacer(),
+          _HeaderAction(
+            isDark: isDark,
+            icon: Icons.notifications_none_rounded,
+            onTap: onNotifications,
+            badge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : '$unreadCount') : null,
+          ),
+          const SizedBox(width: 8),
+          _AvatarDot(name: employeeName, isDark: isDark),
+          const SizedBox(width: 8),
+          // The menu: a real PopupMenuButton that actually opens.
+          PopupMenuButton<String>(
+            tooltip: 'Menu',
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              size: 18,
+              color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF525252),
+            ),
+            onSelected: _onMenuSelected,
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'refresh',
+                child: _MenuItem(icon: Icons.refresh, label: 'Refresh'),
+              ),
+              if (onNotifications != null)
+                const PopupMenuItem(
+                  value: 'notifications',
+                  child: _MenuItem(icon: Icons.notifications, label: 'Notifications'),
+                ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: _MenuItem(icon: Icons.logout, label: 'Sign out', destructive: true),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onMenuSelected(String value) {
+    switch (value) {
+      case 'refresh':
+        onRefresh?.call();
+      case 'notifications':
+        onNotifications?.call();
+      case 'logout':
+        onLogout?.call();
+    }
+  }
+}
+
+
+class _RoleChip extends StatelessWidget {
+  const _RoleChip({
+    required this.label,
+    required this.isDark,
+    this.quiet = false,
+    this.ellipsize = false,
+  });
+
+  final String label;
+  final bool isDark;
+  final bool quiet;
+
+  /// When true the chip fills its parent's width (inside a [Flexible]) and
+  /// ellipsizes the label — used on narrow screens so the team code never
+  /// pushes the header actions off the edge.
+  final bool ellipsize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: ellipsize ? double.infinity : null,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(4),
+        border: quiet
+            ? Border.all(color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5), width: 1)
+            : null,
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: AppTypography.fontFamily,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: isDark ? const Color(0xFFD4D4D4) : const Color(0xFF404040),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.isDark,
+    required this.icon,
+    this.onTap,
+    this.badge,
+  });
+
+  final bool isDark;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final String? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, size: 19,
+                  color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF525252)),
+              if (badge != null)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDC2626),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      badge!.length > 2 ? '99+' : badge!,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarDot extends StatelessWidget {
+  const _AvatarDot({required this.name, required this.isDark});
+
+  final String name;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'E';
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isDark ? Colors.white : const Color(0xFF171717),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: isDark ? const Color(0xFF171717) : Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({
+    required this.icon,
+    required this.label,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = destructive ? StatusPalette.danger(cs) : cs.onSurface;
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 14,
+              fontWeight: destructive ? FontWeight.w600 : FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A bordered metric card: title, one big figure, optional badge/icon and a
+/// quiet caption. [featured] swaps to the dark elevated surface.
 class StatCard extends StatelessWidget {
   const StatCard({
     super.key,
@@ -1021,7 +1487,7 @@ class StatCard extends StatelessWidget {
                             height: 8,
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Color(0xFF22C55E), // green status-pip
+                              color: Color(0xFF22C55E),
                             ),
                           )
                         else if (badge != null)
@@ -1076,801 +1542,3 @@ class StatCard extends StatelessWidget {
     );
   }
 }
-
-/// Direct Dart port of `status-badge.blade.php`.
-class StatusBadge extends StatelessWidget {
-  const StatusBadge({
-    super.key,
-    required this.status,
-    this.label,
-    this.type,
-    this.hasDot = true,
-    this.compact = false,
-  });
-
-  final String status;
-  final String? label;
-  final String? type;
-  final bool hasDot;
-  final bool compact;
-
-  static String resolveType(String raw) {
-    switch (raw.trim().toLowerCase()) {
-      case 'active':
-      case 'verified':
-      case 'success':
-      case 'completed':
-      case 'paid':
-      case 'confirmed':
-      case 'uploaded':
-      case 'fixed':
-      case 'synced':
-        return 'success';
-      case 'pending':
-      case 'scheduled':
-      case 'requested':
-      case 'partially_paid':
-      case 'unverified':
-      case 'expiring':
-      case 'warning':
-        return 'warning';
-      case 'failed':
-      case 'cancelled':
-      case 'canceled':
-      case 'rejected':
-      case 'expired':
-      case 'error':
-      case 'overdue':
-      case 'still_facing':
-      case 'danger':
-        return 'danger';
-      case 'in_progress':
-      case 'rescheduled':
-      case 'info':
-        return 'info';
-      case 'purple':
-        return 'purple';
-      case 'skipped':
-      case 'disabled':
-      case 'draft':
-      case 'inactive':
-      case 'neutral':
-      default:
-        return 'neutral';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (status.trim().isEmpty) return const SizedBox.shrink();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final resolved = type ?? resolveType(status);
-
-    Color bg;
-    Color ink;
-    Color border;
-
-    switch (resolved) {
-      case 'success':
-        bg = isDark ? const Color(0x2815803D) : const Color(0xFFF0FDF4);
-        ink = isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534);
-        border = isDark ? const Color(0x4015803D) : const Color(0xFFBBF7D0);
-        break;
-      case 'warning':
-        bg = isDark ? const Color(0x28D97706) : const Color(0xFFFFFBEB);
-        ink = isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E);
-        border = isDark ? const Color(0x40D97706) : const Color(0xFFFDE68A);
-        break;
-      case 'danger':
-        bg = isDark ? const Color(0x28DC2626) : const Color(0xFFFEF2F2);
-        ink = isDark ? const Color(0xFFF87171) : const Color(0xFF991B1B);
-        border = isDark ? const Color(0x40DC2626) : const Color(0xFFFECACA);
-        break;
-      case 'info':
-        bg = isDark ? const Color(0x282563EB) : const Color(0xFFEFF6FF);
-        ink = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF);
-        border = isDark ? const Color(0x402563EB) : const Color(0xFFBFDBFE);
-        break;
-      case 'purple':
-        bg = isDark ? const Color(0x287C3AED) : const Color(0xFFFAF5FF);
-        ink = isDark ? const Color(0xFFC084FC) : const Color(0xFF6B21A8);
-        border = isDark ? const Color(0x407C3AED) : const Color(0xFFE9D5FF);
-        break;
-      case 'neutral':
-      default:
-        bg = isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5);
-        ink = isDark ? const Color(0xFFD4D4D4) : const Color(0xFF404040);
-        border = isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5);
-        break;
-    }
-
-    final displayLabel = label ??
-        status
-            .replaceAll(RegExp(r'[-_]'), ' ')
-            .split(' ')
-            .map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '')
-            .join(' ');
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 6 : 8,
-        vertical: compact ? 1.5 : 3,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (hasDot) ...[
-            Container(
-              width: 5.5,
-              height: 5.5,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: ink.withValues(alpha: 0.85),
-              ),
-            ),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            displayLabel,
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: compact ? 10.5 : 11.5,
-              fontWeight: FontWeight.w600,
-              color: ink,
-              height: 1.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Direct Dart port of `search-bar.blade.php`.
-class LeadxSearchBar extends StatelessWidget {
-  const LeadxSearchBar({
-    super.key,
-    this.placeholder = 'Search records…',
-    this.controller,
-    this.onChanged,
-    this.onSubmitted,
-    this.onClear,
-  });
-
-  final String placeholder;
-  final TextEditingController? controller;
-  final ValueChanged<String>? onChanged;
-  final ValueChanged<String>? onSubmitted;
-  final VoidCallback? onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-
-    return Container(
-      height: 42,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF262626) : Colors.white,
-        borderRadius: BorderRadius.circular(AppColors.radiusMd),
-        border: Border.all(
-          color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5),
-          width: 1,
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          Icon(
-            Icons.search,
-            size: 18,
-            color: isDark ? const Color(0xFF888888) : const Color(0xFFA3A3A3),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              onSubmitted: onSubmitted,
-              style: TextStyle(
-                fontFamily: AppTypography.fontFamily,
-                fontSize: 13.5,
-                color: isDark ? Colors.white : const Color(0xFF171717),
-              ),
-              decoration: InputDecoration(
-                hintText: placeholder,
-                hintStyle: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 13.5,
-                  color: isDark
-                      ? const Color(0xFF737373)
-                      : const Color(0xFFA3A3A3),
-                ),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-          if (controller != null && controller!.text.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                controller?.clear();
-                onClear?.call();
-                onChanged?.call('');
-              },
-              child: Icon(
-                Icons.close,
-                size: 16,
-                color: isDark
-                    ? const Color(0xFF888888)
-                    : const Color(0xFFA3A3A3),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Direct Dart port of `empty-state.blade.php`.
-class LeadxEmptyState extends StatelessWidget {
-  const LeadxEmptyState({
-    super.key,
-    this.title = 'No records found',
-    this.description = 'There are currently no items matching your criteria.',
-    this.icon,
-    this.action,
-  });
-
-  final String title;
-  final String description;
-  final IconData? icon;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0x1F262626) : const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(AppColors.radiusLg),
-        border: Border.all(
-          color: isDark ? const Color(0xFF333333) : const Color(0xFFD4D4D4),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isDark
-                  ? const Color(0xFF262626)
-                  : const Color(0xFFF5F5F5),
-            ),
-            child: Icon(
-              icon ?? Icons.inbox_outlined,
-              size: 24,
-              color: isDark
-                  ? const Color(0xFF888888)
-                  : const Color(0xFFA3A3A3),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF262626),
-            ),
-          ),
-          const SizedBox(height: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 320),
-            child: Text(
-              description,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: AppTypography.fontFamily,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: isDark
-                    ? const Color(0xFFA3A3A3)
-                    : const Color(0xFF737373),
-              ),
-            ),
-          ),
-          if (action != null) ...[
-            const SizedBox(height: 16),
-            action!,
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Direct Dart port of `alert.blade.php`.
-class LeadxAlert extends StatelessWidget {
-  const LeadxAlert({
-    super.key,
-    required this.message,
-    this.type = 'info',
-    this.title,
-    this.onDismiss,
-  });
-
-  final String message;
-  final String type; // success, warning, danger, info
-  final String? title;
-  final VoidCallback? onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    Color bg;
-    Color border;
-    Color ink;
-    IconData icon;
-
-    switch (type) {
-      case 'success':
-        bg = isDark ? const Color(0x2815803D) : const Color(0xFFF0FDF4);
-        border = isDark ? const Color(0x4015803D) : const Color(0xFFBBF7D0);
-        ink = isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534);
-        icon = Icons.check_circle_outline;
-        break;
-      case 'warning':
-        bg = isDark ? const Color(0x28D97706) : const Color(0xFFFFFBEB);
-        border = isDark ? const Color(0x40D97706) : const Color(0xFFFDE68A);
-        ink = isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E);
-        icon = Icons.warning_amber_rounded;
-        break;
-      case 'danger':
-        bg = isDark ? const Color(0x28DC2626) : const Color(0xFFFEF2F2);
-        border = isDark ? const Color(0x40DC2626) : const Color(0xFFFECACA);
-        ink = isDark ? const Color(0xFFF87171) : const Color(0xFF991B1B);
-        icon = Icons.error_outline;
-        break;
-      case 'info':
-      default:
-        bg = isDark ? const Color(0x282563EB) : const Color(0xFFEFF6FF);
-        border = isDark ? const Color(0x402563EB) : const Color(0xFFBFDBFE);
-        ink = isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF);
-        icon = Icons.info_outline;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppColors.radiusLg),
-        border: Border.all(color: border, width: 1),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: ink),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (title != null && title!.isNotEmpty) ...[
-                  Text(
-                    title!,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: ink,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                ],
-                Text(
-                  message,
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w400,
-                    color: ink,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (onDismiss != null)
-            GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close, size: 16, color: ink),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Direct Dart port of `page-header.blade.php`.
-class LeadxPageHeader extends StatelessWidget {
-  const LeadxPageHeader({
-    super.key,
-    required this.title,
-    this.subtitle,
-    this.actions,
-  });
-
-  final String title;
-  final String? subtitle;
-  final Widget? actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                    color: isDark ? Colors.white : const Color(0xFF171717),
-                  ),
-                ),
-                if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      color: isDark
-                          ? const Color(0xFFA3A3A3)
-                          : const Color(0xFF737373),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          ?actions,
-        ],
-      ),
-    );
-  }
-}
-
-/// Direct Dart port of `<header class="page-header">` in `employee.blade.php` and `employee-dashboard-preview.html`.
-class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
-  const LeadxNavHeader({
-    super.key,
-    required this.employeeName,
-    this.teamCode,
-    this.unreadCount = 0,
-    this.onMenuTap,
-    this.onLogoTap,
-    this.onNotificationsTap,
-    this.onProfileTap,
-    this.onLogoutTap,
-  });
-
-  final String employeeName;
-  final String? teamCode;
-  final int unreadCount;
-  final VoidCallback? onMenuTap;
-  final VoidCallback? onLogoTap;
-  final VoidCallback? onNotificationsTap;
-  final VoidCallback? onProfileTap;
-  final VoidCallback? onLogoutTap;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(56);
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    final initial = employeeName.isNotEmpty ? employeeName[0].toUpperCase() : 'E';
-
-    return Container(
-      height: 56,
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF171717) : Colors.white,
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFE5E5E5),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // ── Header Left ──────────────────────────────────────────────
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Sidebar toggle button (hamburger)
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  onTap: onMenuTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.menu_rounded,
-                      size: 20,
-                      color: isDark ? Colors.white : const Color(0xFF171717),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              // Brand Logo & Site Name
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  onTap: onLogoTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF171717),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'L',
-                            style: TextStyle(
-                              color: isDark ? const Color(0xFF171717) : Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'LeadX',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.4,
-                          color: isDark ? Colors.white : const Color(0xFF171717),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Header divider
-              Container(
-                height: 16,
-                width: 1,
-                color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5),
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-              // Role Badge: Employee
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Employee',
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? const Color(0xFFD4D4D4) : const Color(0xFF404040),
-                  ),
-                ),
-              ),
-              if (teamCode != null && teamCode!.isNotEmpty) ...[
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Text(
-                    'Team: $teamCode',
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF525252),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-
-          // ── Header Right ─────────────────────────────────────────────
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Notification bell with unread badge
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  onTap: onNotificationsTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.notifications_none_rounded,
-                          size: 19,
-                          color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF525252),
-                        ),
-                      ),
-                      Positioned(
-                        top: 2,
-                        right: 2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: unreadCount > 0 ? const Color(0xFFDC2626) : const Color(0xFF737373),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
-                          child: Center(
-                            child: Text(
-                              unreadCount > 99 ? '99+' : '$unreadCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-
-              // Profile Avatar + Name (with left divider)
-              Container(
-                height: 16,
-                width: 1,
-                color: isDark ? const Color(0xFF383838) : const Color(0xFFE5E5E5),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-              ),
-              Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  onTap: onProfileTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF171717),
-                          ),
-                          child: Center(
-                            child: Text(
-                              initial,
-                              style: TextStyle(
-                                color: isDark ? const Color(0xFF171717) : Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (MediaQuery.of(context).size.width >= 420) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            employeeName,
-                            style: TextStyle(
-                              fontFamily: AppTypography.fontFamily,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: isDark ? Colors.white : const Color(0xFF171717),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-
-              // Log out button
-              OutlinedButton(
-                onPressed: onLogoutTap,
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  side: BorderSide(
-                    color: isDark ? const Color(0xFF404040) : const Color(0xFFE5E5E5),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                child: Text(
-                  'Log out',
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : const Color(0xFF404040),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
