@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:leadx/features/dashboard/home_shell.dart';
 import 'package:leadx/shared/format.dart';
 import 'package:leadx/shared/models/currency.dart';
 import 'package:leadx/shared/models/customer.dart';
@@ -308,6 +310,45 @@ void main() {
       expect(c.code, 'USD');
       expect(c.symbol, r'$');
       expect(c.decimalPlaces, 2);
+    });
+  });
+
+  group('AnimatedIndexedStack', () {
+    testWidgets('animates and displays correct indexed child', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AnimatedIndexedStack(
+              index: 0,
+              children: [
+                Text('Page 0'),
+                Text('Page 1'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Page 0'), findsOneWidget);
+      expect(find.text('Page 1'), findsNothing);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AnimatedIndexedStack(
+              index: 1,
+              children: [
+                Text('Page 0'),
+                Text('Page 1'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      expect(find.text('Page 0'), findsNothing);
+      expect(find.text('Page 1'), findsOneWidget);
     });
   });
 }

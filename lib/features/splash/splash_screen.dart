@@ -36,9 +36,9 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 320),
     );
-    _reveal = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _reveal = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     _controller.forward();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -93,52 +93,25 @@ class _SplashScreenState extends State<SplashScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Spacer(flex: 3),
-            // Logo badge: a solid neutral disc, no glow, no ring.
-            Container(
-              width: 92,
-              height: 92,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.brandDark,
-              ),
-              padding: const EdgeInsets.all(4),
-              child: ClipOval(
-                child: Image.asset(
-                  'assets/images/leadx_logo.png',
-                  fit: BoxFit.cover,
-                ),
+            // Logo: widescreen brand mark contain fit
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 180, maxHeight: 60),
+              child: Image.asset(
+                'assets/images/leadx_logo.png',
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
               ),
             ),
-            // The single neutral accent: a 1px #FAFAFA hairline.
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 24),
-              child: Container(
-                height: 1,
-                width: 36,
-                color: AppColors.brandDark,
-              ),
-            ),
-            // Wordmark.
-            Text(
-              'LEADX',
-              style: TextStyle(
-                fontFamily: AppTypography.fontFamily,
-                color: AppColors.brandDark,
-                fontSize: 27,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 5.5,
-              ),
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
             // Tagline.
             Text(
               'EMPLOYEE PORTAL & CLOSING ENGINE',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: AppTypography.fontFamily,
-                color: AppColors.brandDark.withValues(alpha: 0.55),
+                color: AppColors.brandDark.withValues(alpha: 0.65),
                 fontSize: 10.5,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 letterSpacing: 2.2,
               ),
             ),

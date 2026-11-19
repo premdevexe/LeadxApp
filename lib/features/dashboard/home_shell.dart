@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
+import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
@@ -64,7 +65,7 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       drawer: menu,
       endDrawer: menu,
-      body: IndexedStack(index: _index, children: screens),
+      body: AnimatedIndexedStack(index: _index, children: screens),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: cs.surface,
@@ -209,36 +210,80 @@ class _MenuBody extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF171717),
-                        borderRadius: BorderRadius.circular(AppColors.radiusMd),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'L',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                Builder(
+                  builder: (context) {
+                    final config = context.watch<AppConfigService>();
+                    final siteLogoUrl = config.siteLogoUrl;
+
+                    Widget fallback = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: cs.brightness == Brightness.dark
+                                ? Colors.white
+                                : const Color(0xFF171717),
+                            borderRadius: BorderRadius.circular(AppColors.radiusMd),
+                          ),
+                          child: Center(
+                            child: Text(
+                              config.siteName.isNotEmpty ? config.siteName[0].toUpperCase() : 'L',
+                              style: TextStyle(
+                                color: cs.brightness == Brightness.dark
+                                    ? const Color(0xFF171717)
+                                    : Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'LeadX',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ],
+                        const SizedBox(width: 10),
+                        Text(
+                          config.siteName,
+                          style: TextStyle(
+                            fontFamily: AppTypography.fontFamily,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ],
+                    );
+
+                    Widget logoWidget;
+                    if (siteLogoUrl != null && siteLogoUrl.isNotEmpty) {
+                      logoWidget = Image.network(
+                        siteLogoUrl,
+                        height: 32,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, _, _) => Image.asset(
+                          'assets/images/leadx_logo.png',
+                          height: 32,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (_, _, _) => fallback,
+                        ),
+                      );
+                    } else {
+                      logoWidget = Image.asset(
+                        'assets/images/leadx_logo.png',
+                        height: 32,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        errorBuilder: (_, _, _) => fallback,
+                      );
+                    }
+
+                    return ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 32, maxWidth: 160),
+                      child: logoWidget,
+                    );
+                  },
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
@@ -354,5 +399,82 @@ class _MenuBody extends StatelessWidget {
   void _nav(BuildContext context, Widget screen) {
     // The end drawer is closed by the parent; just push the destination.
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+}
+
+/// A smooth, state-preserving animated indexed stack that applies a fluid
+/// fade and subtle glide when switching bottom navigation destinations.
+class AnimatedIndexedStack extends StatefulWidget {
+  const AnimatedIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+    this.duration = const Duration(milliseconds: 220),
+  });
+
+  final int index;
+  final List<Widget> children;
+  final Duration duration;
+
+  @override
+  State<AnimatedIndexedStack> createState() => _AnimatedIndexedStackState();
+}
+
+class _AnimatedIndexedStackState extends State<AnimatedIndexedStack>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+  late Animation<Offset> _slide;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.index;
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    );
+    _opacity = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.012),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(AnimatedIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index != _currentIndex) {
+      _currentIndex = widget.index;
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: IndexedStack(
+          index: _currentIndex,
+          children: widget.children,
+        ),
+      ),
+    );
   }
 }
