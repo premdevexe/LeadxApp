@@ -9,7 +9,6 @@ import '../../core/utils/native_banner_helper.dart';
 import '../auth/auth_controller.dart';
 import '../notifications/notifications_screen.dart';
 import '../search/global_search_screen.dart';
-import '../calendar/calendar_screen.dart';
 import '../customer_issues/customer_issues_screen.dart';
 import '../follow_ups/follow_up_create_sheet.dart';
 import '../orders/order_create_sheet.dart';
@@ -138,11 +137,6 @@ class _CrmHubViewState extends State<_CrmHubView> {
               title: 'Open Notifications',
               icon: const NativeIcon.symbol('bell', fallback: Icons.notifications),
               onSelected: () => _push(const NotificationsScreen()),
-            ),
-            NativeMenuItem(
-              title: 'Open Calendar',
-              icon: const NativeIcon.symbol('calendar', fallback: Icons.calendar_today),
-              onSelected: () => _push(const CalendarScreen()),
             ),
           ],
         ),
@@ -304,14 +298,6 @@ class _CrmHubViewState extends State<_CrmHubView> {
                   subtitle: 'Omni CRM lookup',
                   color: cs.onSurfaceVariant,
                   onTap: () => _push(const GlobalSearchScreen()),
-                ),
-                _ModuleCard(
-                  icon: Icons.calendar_month_outlined,
-                  symbol: 'calendar',
-                  title: 'Calendar',
-                  subtitle: 'Scheduled events',
-                  color: cs.onSurfaceVariant,
-                  onTap: () => _push(const CalendarScreen()),
                 ),
                 _ModuleCard(
                   icon: Icons.payments_outlined,

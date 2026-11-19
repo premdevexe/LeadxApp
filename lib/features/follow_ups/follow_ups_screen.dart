@@ -12,7 +12,6 @@ import '../../shared/models/follow_up.dart';
 import '../../shared/models/subscription.dart' show ListMeta;
 import '../../shared/widgets/app_widgets.dart';
 import '../../core/utils/native_banner_helper.dart';
-import '../calendar/calendar_screen.dart';
 import '../search/global_search_screen.dart';
 import 'follow_up_create_sheet.dart';
 import 'follow_up_detail_screen.dart';
@@ -325,14 +324,6 @@ class _FollowUpsScreenState extends State<FollowUpsScreen> {
             group: 0,
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const GlobalSearchScreen()),
-            ),
-          ),
-          NativeBarButton(
-            icon: const NativeIcon.symbol('calendar', fallback: Icons.calendar_month),
-            title: 'Calendar',
-            group: 0,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const CalendarScreen()),
             ),
           ),
         ],

@@ -7,7 +7,6 @@ import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
-import '../calendar/calendar_screen.dart';
 import '../customer_issues/customer_issues_screen.dart';
 import '../customers/customers_screen.dart';
 import '../follow_ups/follow_ups_screen.dart';
@@ -385,7 +384,6 @@ class _MenuBody extends StatelessWidget {
         row(Icons.alarm_outlined, 'Expiry Reminders', () => _nav(context, const ExpiringSubscriptionsScreen())),
         header('Activities & Support'),
         row(Icons.task_alt_outlined, 'Follow-ups', () => _nav(context, const FollowUpsScreen())),
-        row(Icons.calendar_today_outlined, 'Google Calendar', () => _nav(context, const CalendarScreen())),
         row(Icons.report_problem_outlined, 'Customer Issues', () => _nav(context, const CustomerIssuesScreen())),
         header('Account'),
         row(Icons.person_outline, 'Profile & Settings', () => _nav(context, const ProfileScreen())),
