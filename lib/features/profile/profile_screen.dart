@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../core/design/native_chrome.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/design/app_typography.dart';
+import '../../core/design/native_chrome.dart';
+import '../../core/design/theme_controller.dart';
 import '../../core/errors/api_exception.dart';
 import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
-import '../../core/design/theme_controller.dart';
+import '../../core/utils/native_banner_helper.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
 
-/// Profile: identity view, contact-field edits, password change,
+/// Profile: identity view, contact-field & username edits, password change,
 /// appearance preferences, and logout. Role/team/permissions are
 /// admin-managed and can never be sent (the backend rejects them).
 class ProfileScreen extends StatefulWidget {
@@ -23,12 +25,17 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameCtrl = TextEditingController();
+  final _userCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
 
   final _curPass = TextEditingController();
   final _newPass = TextEditingController();
   final _confPass = TextEditingController();
+
+  bool _obscureCur = true;
+  bool _obscureNew = true;
+  bool _obscureConf = true;
 
   bool _saving = false;
   bool _changingPassword = false;
@@ -43,9 +50,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _seed() {
     final auth = context.read<AuthController>();
-    _nameCtrl.text = auth.me?.data.name ?? '';
-    _phoneCtrl.text = auth.me?.data.phone ?? '';
-    _emailCtrl.text = auth.me?.data.email ?? '';
+    final me = auth.me?.data;
+    _nameCtrl.text = me?.name ?? '';
+    _userCtrl.text = me?.username ?? '';
+    _phoneCtrl.text = me?.phone ?? '';
+    _emailCtrl.text = me?.email ?? '';
   }
 
   Future<void> _saveContact() async {
@@ -56,9 +65,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final payload = <String, dynamic>{
       if (_nameCtrl.text.trim().isNotEmpty) 'name': _nameCtrl.text.trim(),
+      if (_userCtrl.text.trim().isNotEmpty) 'username': _userCtrl.text.trim(),
       'phone': _phoneCtrl.text.trim(),
-      if (_emailCtrl.text.trim().isNotEmpty)
-        'email': _emailCtrl.text.trim(),
+      if (_emailCtrl.text.trim().isNotEmpty) 'email': _emailCtrl.text.trim(),
     };
 
     if (payload.length < 2) {
@@ -76,10 +85,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _msg = 'Profile updated.';
+        _msg = 'Profile details updated successfully.';
         _msgType = 'ok';
       });
       context.read<AuthController>().refreshMe();
+      showLeadxBanner(
+        context,
+        title: 'Profile Updated',
+        body: 'Your profile and username have been saved.',
+        icon: const NativeIcon.symbol('checkmark.circle.fill', fallback: Icons.check_circle),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -134,12 +149,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _curPass.clear();
       _newPass.clear();
       _confPass.clear();
+      showLeadxBanner(
+        context,
+        title: 'Password Changed',
+        body: 'Your password was updated successfully.',
+        icon: const NativeIcon.symbol('lock.fill', fallback: Icons.lock),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _changingPassword = false;
         _msg = e.isValidation
-            ? 'Password change rejected (check current password).'
+            ? (e.fieldErrors.values.isNotEmpty
+                ? e.fieldErrors.values.first.first
+                : 'Password change rejected (check current password).')
             : e.message;
         _msgType = 'err';
       });
@@ -170,6 +193,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _userCtrl.dispose();
     _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _curPass.dispose();
@@ -178,29 +202,134 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  Widget _systemRow(BuildContext context, String label, String value) {
+  Widget _buildField({
+    required BuildContext context,
+    required String label,
+    required TextEditingController controller,
+    required IconData prefixIcon,
+    TextInputType keyboardType = TextInputType.text,
+    bool obscureText = false,
+    Widget? suffix,
+    String? hintText,
+  }) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 12,
-              color: cs.onSurfaceVariant,
+    final isDark = cs.brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppTypography.fontFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
+              width: 1,
             ),
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          child: Row(
+            children: [
+              Icon(
+                prefixIcon,
+                size: 18,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  keyboardType: keyboardType,
+                  obscureText: obscureText,
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 13.5,
+                    color: cs.onSurface,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: hintText,
+                    hintStyle: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 13,
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              ?suffix,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailTile({
+    required BuildContext context,
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label.toUpperCase(),
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           Text(
             value,
             style: TextStyle(
               fontFamily: AppTypography.fontFamily,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
               color: cs.onSurface,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -226,310 +355,691 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : null,
         title: const NativeBarTitle(
           title: 'Profile & Settings',
-          capsule: true,
-          icon: NativeIcon.symbol('person.crop.circle', fallback: Icons.account_circle),
+          capsule: false,
         ),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-          if (emp != null) ...[
-            // Profile Card matching profile.blade.php
-            AppCard.surface(
-              context,
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFF171717),
+            // ── Message Banner ──────────────────────────────────────
+            if (_msg != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _msgType == 'err'
+                      ? (isDark ? const Color(0xFF3F1B1B) : const Color(0xFFFEE2E2))
+                      : _msgType == 'warn'
+                          ? (isDark ? const Color(0xFF3F311B) : const Color(0xFFFEF3C7))
+                          : (isDark ? const Color(0xFF1B3F27) : const Color(0xFFDCFCE7)),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _msgType == 'err'
+                        ? const Color(0xFFEF4444)
+                        : _msgType == 'warn'
+                            ? const Color(0xFFF59E0B)
+                            : const Color(0xFF22C55E),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _msgType == 'err'
+                          ? Icons.error_outline_rounded
+                          : _msgType == 'warn'
+                              ? Icons.warning_amber_rounded
+                              : Icons.check_circle_outline_rounded,
+                      size: 18,
+                      color: _msgType == 'err'
+                          ? const Color(0xFFEF4444)
+                          : _msgType == 'warn'
+                              ? const Color(0xFFF59E0B)
+                              : const Color(0xFF22C55E),
                     ),
-                    child: Center(
+                    const SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        emp.name.isNotEmpty ? emp.name[0].toUpperCase() : 'E',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 24,
+                        _msg!,
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: _msgType == 'err'
+                              ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+                              : _msgType == 'warn'
+                                  ? (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E))
+                                  : (isDark ? const Color(0xFF86EFAC) : const Color(0xFF166534)),
                         ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    emp.name,
-                    style: const TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (emp.email != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      emp.email!,
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 12.5,
-                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF262626)
-                              : const Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF383838)
-                                : const Color(0xFFE5E5E5),
+                ),
+              ),
+            ],
+
+            // ── Profile Card ─────────────────────────────────────────
+            if (emp != null) ...[
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E22) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  children: [
+                    // Avatar & Monogram with Status Dot
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isDark ? const Color(0xFF2E2E36) : const Color(0xFF171717),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF44444C) : const Color(0xFF262626),
+                              width: 2,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              emp.name.trim().isNotEmpty ? emp.name.trim()[0].toUpperCase() : 'E',
+                              style: const TextStyle(
+                                fontFamily: AppTypography.fontFamily,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 26,
+                              ),
+                            ),
                           ),
                         ),
-                        child: Text(
-                          '@${emp.username}',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: cs.onSurfaceVariant,
+                        Positioned(
+                          right: 2,
+                          bottom: 2,
+                          child: Container(
+                            width: 15,
+                            height: 15,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF22C55E),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
+                                width: 2.5,
+                              ),
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Full Name
+                    Text(
+                      emp.name,
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                        color: cs.onSurface,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+
+                    if (emp.email != null && emp.email!.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        emp.email!,
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 12.5,
+                          color: cs.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+
+                    const SizedBox(height: 10),
+                    // Username & Account Status Pills
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF26262B) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '@${emp.username}',
+                                style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              GestureDetector(
+                                onTap: () {
+                                  Clipboard.setData(ClipboardData(text: emp.username ?? ''));
+                                  showLeadxBanner(
+                                    context,
+                                    title: 'Copied',
+                                    body: '@${emp.username} copied to clipboard',
+                                    icon: const NativeIcon.symbol('doc.on.doc', fallback: Icons.copy),
+                                  );
+                                },
+                                child: Icon(
+                                  Icons.copy_rounded,
+                                  size: 12,
+                                  color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        StatusBadge(
+                          status: '${emp.status ?? 'active'} Account',
+                          type: (emp.status ?? 'active') == 'active' ? 'success' : 'danger',
+                          compact: true,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+                    Divider(
+                      height: 1,
+                      color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFF1F5F9),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // 2x2 Grid of Account Detail Tiles
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildDetailTile(
+                            context: context,
+                            label: 'Employee ID',
+                            value: '#${emp.id}',
+                            icon: Icons.badge_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildDetailTile(
+                            context: context,
+                            label: 'System Role',
+                            value: (emp.role ?? 'Employee').toUpperCase(),
+                            icon: Icons.shield_outlined,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildDetailTile(
+                            context: context,
+                            label: 'Assigned Team',
+                            value: emp.team?.teamName ?? 'None',
+                            icon: Icons.groups_outlined,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildDetailTile(
+                            context: context,
+                            label: 'Team Code',
+                            value: emp.team?.teamCode ?? '—',
+                            icon: Icons.tag_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Team assignment and role permissions are managed exclusively by Super Admin.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 10.5,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.75),
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // ── Personal Information / Contact Details ────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.edit_note_rounded, size: 20, color: cs.primary),
                       const SizedBox(width: 8),
-                      StatusBadge(
-                        status: '${emp.status ?? 'active'} Account',
-                        type: (emp.status ?? 'active') == 'active'
-                            ? 'success'
-                            : 'danger',
-                        compact: true,
+                      Text(
+                        'Personal Information',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(height: 1),
+                  const SizedBox(height: 14),
+
+                  // Full Name
+                  _buildField(
+                    context: context,
+                    label: 'Full Name',
+                    controller: _nameCtrl,
+                    prefixIcon: Icons.person_outline_rounded,
+                    hintText: 'Enter your full name',
+                  ),
                   const SizedBox(height: 12),
-                  // System-Assigned Info (Read-Only)
-                  _systemRow(context, 'Employee ID', '#${emp.id}'),
-                  _systemRow(context, 'System Role',
-                      (emp.role ?? 'Employee').toUpperCase()),
-                  _systemRow(context, 'Assigned Team',
-                      emp.team?.teamName ?? 'None'),
-                  _systemRow(context, 'Team Code',
-                      emp.team?.teamCode ?? '—'),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E1E1E)
-                          : const Color(0xFFFAFAFA),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Team assignment and role permissions are managed exclusively by Super Admin.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 10.5,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+
+                  // Editable Username
+                  _buildField(
+                    context: context,
+                    label: 'Username',
+                    controller: _userCtrl,
+                    prefixIcon: Icons.alternate_email_rounded,
+                    hintText: 'Choose a unique username',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Phone
+                  _buildField(
+                    context: context,
+                    label: 'Phone Number',
+                    controller: _phoneCtrl,
+                    prefixIcon: Icons.phone_outlined,
+                    keyboardType: TextInputType.phone,
+                    hintText: 'Enter your phone number',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Email
+                  _buildField(
+                    context: context,
+                    label: 'Email Address',
+                    controller: _emailCtrl,
+                    prefixIcon: Icons.email_outlined,
+                    keyboardType: TextInputType.emailAddress,
+                    hintText: 'Enter your email address',
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Save Profile Button
+                  SizedBox(
+                    height: 46,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: isDark ? Colors.white : const Color(0xFF171717),
+                        foregroundColor: isDark ? const Color(0xFF171717) : Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 0,
                       ),
+                      onPressed: _saving ? null : _saveContact,
+                      child: _saving
+                          ? const LeadxFlickrLoading(size: 24)
+                          : const Text(
+                              'Save profile',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                   ),
                 ],
               ),
             ),
-          ],
-          const SizedBox(height: 12),
-          if (_msg != null)
-            AppCard.surface(
-              context,
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              color: _msgType == 'err'
-                  ? cs.errorContainer
-                  : _msgType == 'warn'
-                      ? cs.tertiaryContainer
-                      : cs.primaryContainer,
-              child: Text(
-                _msg!,
-                style: AppTypography.secondary.copyWith(
-                    color: _msgType == 'err'
-                        ? cs.onErrorContainer
-                        : _msgType == 'warn'
-                            ? cs.onTertiaryContainer
-                            : cs.onPrimaryContainer),
+            const SizedBox(height: 14),
+
+            // ── Appearance & Preferences ──────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.tune_rounded, size: 19, color: cs.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Appearance & Preferences',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  const _AppearanceRow(),
+                  const Divider(height: 24),
+                  // Display Currency
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Display currency',
+                              style: AppTypography.body.copyWith(
+                                color: cs.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _currencyLine(context),
+                              style: AppTypography.secondary.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.sync_rounded, size: 20),
+                        color: cs.primary,
+                        onPressed: () => context.read<AppConfigService>().refresh(),
+                        tooltip: 'Sync currency config',
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          // ── Contact details ───────────────────────────────────────
-          AppCard.surface(
-            context,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('CONTACT DETAILS',
-                    style: AppTypography.caption.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8)),
-                const SizedBox(height: 12),
-                TextField(
-                    controller: _nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Name')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: _phoneCtrl,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: 'Phone')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email')),
-                const SizedBox(height: 14),
-                FilledButton(
-                  onPressed: _saving ? null : _saveContact,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Save profile'),
+            const SizedBox(height: 14),
+
+            // ── Change Password ───────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+                  width: 1,
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // ── Appearance & preferences ──────────────────────────────
-          AppCard.surface(
-            context,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Appearance & preferences',
-                    style: AppTypography.caption.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                _AppearanceRow(),
-                const Divider(height: 24),
-                // Live admin currency — a read-only mirror of the Admin
-                // panel; it updates on the next dashboard refresh.
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Display currency',
-                              style: AppTypography.body.copyWith(
-                                  color: cs.onSurface)),
-                          const SizedBox(height: 2),
-                          Text(
-                            _currencyLine(context),
-                            style:
-                                AppTypography.secondary.copyWith(color: cs.onSurfaceVariant),
-                          ),
-                        ],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.lock_outline_rounded, size: 19, color: cs.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Change Password',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Changing the password signs out this account on all other devices.',
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 11.5,
+                      color: cs.onSurfaceVariant,
                     ),
-                    Icon(Icons.currency_exchange, size: 20, color: cs.primary),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // ── Change password ───────────────────────────────────────
-          AppCard.surface(
-            context,
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Change password',
-                    style: AppTypography.caption.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(
-                  'Changing the password signs out this account on all '
-                  'other devices.',
-                  style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
-                ),
-                const SizedBox(height: 10),
-                TextField(
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Current Password
+                  _buildField(
+                    context: context,
+                    label: 'Current Password',
                     controller: _curPass,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                        labelText: 'Current password')),
-                const SizedBox(height: 10),
-                TextField(
+                    prefixIcon: Icons.key_outlined,
+                    obscureText: _obscureCur,
+                    hintText: 'Enter your current password',
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscureCur ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        size: 18,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: () => setState(() => _obscureCur = !_obscureCur),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // New Password
+                  _buildField(
+                    context: context,
+                    label: 'New Password',
                     controller: _newPass,
-                    obscureText: true,
-                    decoration:
-                        const InputDecoration(labelText: 'New password')),
-                const SizedBox(height: 10),
-                TextField(
+                    prefixIcon: Icons.lock_reset_rounded,
+                    obscureText: _obscureNew,
+                    hintText: 'At least 8 characters with numbers & letters',
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        size: 18,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Confirm Password
+                  _buildField(
+                    context: context,
+                    label: 'Confirm New Password',
                     controller: _confPass,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                        labelText: 'Confirm new password')),
-                const SizedBox(height: 14),
-                FilledButton.tonal(
-                  onPressed: _changingPassword ? null : _changePassword,
-                  child: _changingPassword
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Change password'),
+                    prefixIcon: Icons.lock_outline_rounded,
+                    obscureText: _obscureConf,
+                    hintText: 'Re-enter your new password',
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscureConf ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        size: 18,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: () => setState(() => _obscureConf = !_obscureConf),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    height: 46,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: cs.onSurface,
+                        side: BorderSide(
+                          color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: _changingPassword ? null : _changePassword,
+                      child: _changingPassword
+                          ? const LeadxFlickrLoading(size: 24)
+                          : const Text(
+                              'Update Password',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Sign Out ──────────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF2E1919) : const Color(0xFFFFF1F2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFE4E6),
+                  width: 1,
                 ),
-              ],
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _logout,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Sign out',
+                                style: TextStyle(
+                                  fontFamily: AppTypography.fontFamily,
+                                  color: Color(0xFFEF4444),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Revokes this device token on the server.',
+                                style: TextStyle(
+                                  fontFamily: AppTypography.fontFamily,
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.8),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.6),
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          // ── Sign out ──────────────────────────────────────────────
-          AppCard.surface(
-            context,
-            padding: EdgeInsets.zero,
-            color: cs.errorContainer.withValues(alpha: 0.4),
-            child: ListTile(
-              leading: Icon(Icons.logout, color: cs.onErrorContainer),
-              title: Text('Sign out',
-                  style: AppTypography.cardTitle
-                      .copyWith(color: cs.onErrorContainer, fontWeight: FontWeight.w600)),
-              subtitle: Text('Revokes this device token on the server.',
-                  style:
-                      AppTypography.secondary.copyWith(color: cs.onErrorContainer)),
-              onTap: _logout,
+            const SizedBox(height: 18),
+
+            Center(
+              child: Text(
+                'LeadX Employee App · ${AppConstants.appName}',
+                style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: Text(
-              'LeadX Employee App · ${AppConstants.appName}',
-              style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   String _currencyLine(BuildContext context) {
     final cfg = context.watch<AppConfigService>().currency;
@@ -563,11 +1073,11 @@ class _AppearanceRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Appearance Mode',
-                      style: AppTypography.body.copyWith(color: cs.onSurface)),
+                      style: AppTypography.body.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(
                     'Select theme appearance',
-                    style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant),
+                    style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant, fontSize: 12),
                   ),
                 ],
               ),
