@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../core/config/api_config.dart';
@@ -75,7 +77,9 @@ class ReverbService {
       final uri = Uri.parse(
           '$scheme://$host$portPart/app/$key?protocol=7&client=js&version=8.4.0-reverb&flash=false');
 
-      final channel = WebSocketChannel.connect(uri);
+      final ws = await WebSocket.connect(uri.toString())
+          .timeout(const Duration(seconds: 4));
+      final channel = IOWebSocketChannel(ws);
       _channel = channel;
 
       final socketIdC = Completer<String>();

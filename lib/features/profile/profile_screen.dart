@@ -13,9 +13,8 @@ import '../../core/utils/native_banner_helper.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
 
-/// Profile: identity view, contact-field & username edits, password change,
-/// appearance preferences, and logout. Role/team/permissions are
-/// admin-managed and can never be sent (the backend rejects them).
+/// Profile & Settings Screen redesigned to match the modern Stitch design system.
+/// Supports both dynamic Light and Dark modes with responsive styling.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -142,8 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() {
         _changingPassword = false;
-        _msg =
-            'Password changed. Other devices of this account were signed out.';
+        _msg = 'Password changed. Other devices of this account were signed out.';
         _msgType = 'ok';
       });
       _curPass.clear();
@@ -202,18 +200,782 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  Widget _buildField({
-    required BuildContext context,
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthController>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final emp = auth.me?.data;
+    final canPop = Navigator.of(context).canPop();
+
+    // Stitch Design Color Tokens
+    final pageBg = isDark ? const Color(0xFF090D16) : const Color(0xFFF8FAFC);
+    final cardBg = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final cardBorder = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textSecondary = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: NativeNavigationBar(
+        leading: canPop
+            ? NativeBarButton(
+                icon: const NativeIcon.symbol('chevron.left', fallback: Icons.arrow_back),
+                title: 'Back',
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : null,
+        title: const NativeBarTitle(
+          title: 'Profile & Settings',
+          icon: NativeIcon.symbol('person.fill', fallback: Icons.person_rounded),
+          capsule: true,
+        ),
+        trailing: [
+          NativeBarButton(
+            icon: const NativeIcon.symbol('ellipsis', fallback: Icons.more_horiz_rounded),
+            onPressed: () => _showQuickActionsMenu(context),
+          ),
+        ],
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            // ── Feedback Banner ───────────────────────────────────────
+            if (_msg != null) ...[
+              _buildFeedbackBanner(isDark: isDark),
+              const SizedBox(height: 14),
+            ],
+
+            // ── User Identity Card ────────────────────────────────────
+            if (emp != null) ...[
+              _buildUserProfileCard(
+                emp: emp,
+                isDark: isDark,
+                cardBg: cardBg,
+                cardBorder: cardBorder,
+                textPrimary: textPrimary,
+                textSecondary: textSecondary,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Contact Details Form ──────────────────────────────────
+            _buildContactDetailsCard(
+              isDark: isDark,
+              cardBg: cardBg,
+              cardBorder: cardBorder,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+            const SizedBox(height: 16),
+
+            // ── Appearance & Preferences ──────────────────────────────
+            _buildAppearanceCard(
+              isDark: isDark,
+              cardBg: cardBg,
+              cardBorder: cardBorder,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+            const SizedBox(height: 16),
+
+            // ── Change Password Section ───────────────────────────────
+            _buildPasswordCard(
+              isDark: isDark,
+              cardBg: cardBg,
+              cardBorder: cardBorder,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+            const SizedBox(height: 16),
+
+            // ── Sign Out Danger Zone ──────────────────────────────────
+            _buildSignOutDangerZone(isDark: isDark),
+            const SizedBox(height: 20),
+
+            // ── Footer Note ───────────────────────────────────────────
+            Center(
+              child: Text(
+                'LeadX Employee App · ${AppConstants.appName}',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Quick Actions Bottom Sheet ──────────────────────────────────────
+  void _showQuickActionsMenu(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.refresh_rounded),
+                  title: const Text('Refresh Profile'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.read<AuthController>().refreshMe();
+                    showLeadxBanner(
+                      context,
+                      title: 'Refreshed',
+                      body: 'Profile synced with server.',
+                      icon: const NativeIcon.symbol('arrow.clockwise', fallback: Icons.refresh),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.currency_exchange_rounded),
+                  title: const Text('Sync Currency Settings'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.read<AppConfigService>().refresh();
+                    showLeadxBanner(
+                      context,
+                      title: 'Currency Synced',
+                      body: 'Display currency refreshed.',
+                      icon: const NativeIcon.symbol('indianrupeesign', fallback: Icons.currency_rupee),
+                    );
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
+                  title: const Text(
+                    'Sign Out',
+                    style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w600),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _logout();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Feedback Banner ─────────────────────────────────────────────────
+  Widget _buildFeedbackBanner({required bool isDark}) {
+    final isErr = _msgType == 'err';
+    final isWarn = _msgType == 'warn';
+
+    final bg = isErr
+        ? (isDark ? const Color(0xFF3F1B1B) : const Color(0xFFFEE2E2))
+        : isWarn
+            ? (isDark ? const Color(0xFF3F311B) : const Color(0xFFFEF3C7))
+            : (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.4) : const Color(0xFFDCFCE7));
+
+    final border = isErr
+        ? const Color(0xFFEF4444)
+        : isWarn
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFF22C55E);
+
+    final textColor = isErr
+        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+        : isWarn
+            ? (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E))
+            : (isDark ? const Color(0xFF86EFAC) : const Color(0xFF166534));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isErr
+                ? Icons.error_outline_rounded
+                : isWarn
+                    ? Icons.warning_amber_rounded
+                    : Icons.check_circle_outline_rounded,
+            size: 18,
+            color: border,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _msg!,
+              style: TextStyle(
+                fontFamily: AppTypography.fontFamily,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: textColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── 1. User Profile Card ────────────────────────────────────────────
+  Widget _buildUserProfileCard({
+    required dynamic emp,
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
+  }) {
+    // Subtle top accent gradient line
+    final accentGradient = isDark
+        ? const LinearGradient(
+            colors: [Color(0xFF6366F1), Color(0xFF38BDF8), Color(0xFF34D399)],
+          )
+        : const LinearGradient(
+            colors: [Color(0xFF0F172A), Color(0xFF334155), Color(0xFF94A3B8)],
+          );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // Top Accent Gradient Bar
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3.5,
+            child: Container(
+              decoration: BoxDecoration(gradient: accentGradient),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
+            child: Column(
+              children: [
+                // Avatar Squircle & Monogram with Online Ring
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: isDark
+                              ? const [Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF020617)]
+                              : const [Color(0xFF020617), Color(0xFF0F172A), Color(0xFF1E293B)],
+                        ),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFF0F172A),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          emp.name.trim().isNotEmpty
+                              ? emp.name.trim()[0].toUpperCase()
+                              : 'E',
+                          style: const TextStyle(
+                            fontFamily: AppTypography.fontFamily,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                            width: 2.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Name
+                Text(
+                  emp.name,
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                    color: textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+
+                // Email
+                if (emp.email != null && emp.email!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    emp.email!,
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 12),
+
+                // Badges Row: Monospace Username & Active Status Pill
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    // Username Pill (Tap to Copy)
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: emp.username ?? ''));
+                        showLeadxBanner(
+                          context,
+                          title: 'Copied',
+                          body: '@${emp.username} copied to clipboard',
+                          icon: const NativeIcon.symbol('doc.on.doc', fallback: Icons.copy),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.8) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '@${emp.username}',
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.copy_rounded,
+                              size: 11,
+                              color: textSecondary.withValues(alpha: 0.8),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Active Status Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF064E3B).withValues(alpha: 0.4)
+                            : const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF065F46)
+                              : const Color(0xFFBBF7D0),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Active Account',
+                            style: TextStyle(
+                              fontFamily: AppTypography.fontFamily,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 18),
+                Divider(
+                  height: 1,
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                ),
+                const SizedBox(height: 14),
+
+                // 2x2 Metadata Grid
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetadataTile(
+                        label: 'Employee ID',
+                        value: '#${emp.id}',
+                        isMonospace: true,
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildMetadataTile(
+                        label: 'System Role',
+                        value: (emp.role ?? 'EMPLOYEE').toUpperCase(),
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetadataTile(
+                        label: 'Assigned Team',
+                        value: emp.team?.teamName ?? 'Opuszen',
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildMetadataTile(
+                        label: 'Team Code',
+                        value: emp.team?.teamCode ?? 'OZEN',
+                        isMonospace: true,
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+                // Super Admin Info Banner
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF020617).withValues(alpha: 0.5) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                      style: BorderStyle.solid,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 15,
+                        color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Team assignment and role permissions are managed exclusively by Super Admin.',
+                          style: TextStyle(
+                            fontFamily: AppTypography.fontFamily,
+                            fontSize: 11,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetadataTile({
+    required String label,
+    required String value,
+    required bool isDark,
+    bool isMonospace = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF020617).withValues(alpha: 0.6) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontFamily: isMonospace ? 'monospace' : AppTypography.fontFamily,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: isMonospace ? 0.3 : -0.1,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── 2. Contact Details Section ──────────────────────────────────────
+  Widget _buildContactDetailsCard({
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row with "Editable" badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'CONTACT DETAILS',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Text(
+                  'Editable',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Name Input
+          _buildStitchInputField(
+            label: 'Name',
+            controller: _nameCtrl,
+            placeholder: 'Enter your full name',
+            isDark: isDark,
+          ),
+          const SizedBox(height: 12),
+
+          // Username Input
+          _buildStitchInputField(
+            label: 'Username',
+            controller: _userCtrl,
+            placeholder: 'Choose a unique username',
+            isDark: isDark,
+            isMonospace: true,
+          ),
+          const SizedBox(height: 12),
+
+          // Phone Input
+          _buildStitchInputField(
+            label: 'Phone',
+            controller: _phoneCtrl,
+            placeholder: 'Enter phone number',
+            keyboardType: TextInputType.phone,
+            isDark: isDark,
+            isMonospace: true,
+          ),
+          const SizedBox(height: 12),
+
+          // Email Input
+          _buildStitchInputField(
+            label: 'Email',
+            controller: _emailCtrl,
+            placeholder: 'name@company.com',
+            keyboardType: TextInputType.emailAddress,
+            isDark: isDark,
+          ),
+          const SizedBox(height: 18),
+
+          // Save Profile Button
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                elevation: isDark ? 2 : 1,
+                shadowColor: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : const Color(0xFF0F172A).withValues(alpha: 0.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: _saving ? null : _saveContact,
+              child: _saving
+                  ? const LeadxFlickrLoading(size: 22)
+                  : const Text(
+                      'Save profile',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStitchInputField({
     required String label,
     required TextEditingController controller,
-    required IconData prefixIcon,
+    required String placeholder,
+    required bool isDark,
     TextInputType keyboardType = TextInputType.text,
+    bool isMonospace = false,
     bool obscureText = false,
     Widget? suffix,
-    String? hintText,
   }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
+    final fieldBg = isDark ? const Color(0xFF020617).withValues(alpha: 0.8) : const Color(0xFFF8FAFC);
+    final fieldBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,50 +984,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
           label,
           style: TextStyle(
             fontFamily: AppTypography.fontFamily,
-            fontSize: 12.5,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: cs.onSurface,
+            color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
           ),
         ),
         const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
-              width: 1,
-            ),
+            color: fieldBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: fieldBorder, width: 1),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Row(
             children: [
-              Icon(
-                prefixIcon,
-                size: 18,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: TextField(
                   controller: controller,
                   keyboardType: keyboardType,
                   obscureText: obscureText,
                   style: TextStyle(
-                    fontFamily: AppTypography.fontFamily,
+                    fontFamily: isMonospace ? 'monospace' : AppTypography.fontFamily,
                     fontSize: 13.5,
-                    color: cs.onSurface,
+                    fontWeight: FontWeight.w500,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
                   ),
                   decoration: InputDecoration(
-                    hintText: hintText,
+                    hintText: placeholder,
                     hintStyle: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
+                      fontFamily: isMonospace ? 'monospace' : AppTypography.fontFamily,
                       fontSize: 13,
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
                     ),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),
@@ -277,764 +1031,455 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildDetailTile({
-    required BuildContext context,
-    required String label,
-    required String value,
-    required IconData icon,
+  // ── 3. Appearance & Preferences Section ─────────────────────────────
+  Widget _buildAppearanceCard({
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
   }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
+    final theme = context.watch<ThemeController>();
+    final selectedIndex = switch (theme.mode) {
+      ThemeMode.system => 0,
+      ThemeMode.light => 1,
+      ThemeMode.dark => 2,
+    };
 
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
-          width: 1,
-        ),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            'APPEARANCE & PREFERENCES',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Appearance Mode Row
           Row(
             children: [
-              Icon(
-                icon,
-                size: 13,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                  ),
+                ),
+                child: Icon(
+                  Icons.palette_outlined,
+                  size: 18,
+                  color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                ),
               ),
-              const SizedBox(width: 5),
-              Text(
-                label.toUpperCase(),
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance Mode',
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Select theme appearance',
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 11,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              color: cs.onSurface,
+          const SizedBox(height: 12),
+
+          // 3-Option Segmented Control matching Stitch
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF020617) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+              ),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                _buildSegmentButton(
+                  title: 'System',
+                  selected: selectedIndex == 0,
+                  isDark: isDark,
+                  onTap: () => theme.setMode(ThemeMode.system),
+                ),
+                _buildSegmentButton(
+                  title: 'Light',
+                  selected: selectedIndex == 1,
+                  isDark: isDark,
+                  onTap: () => theme.setMode(ThemeMode.light),
+                ),
+                _buildSegmentButton(
+                  title: 'Dark',
+                  selected: selectedIndex == 2,
+                  isDark: isDark,
+                  onTap: () => theme.setMode(ThemeMode.dark),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          Divider(
+            height: 1,
+            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+          ),
+          const SizedBox(height: 14),
+
+          // Display Currency Setting
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Display currency',
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _currencyLine(context),
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 11,
+                        color: textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: () {
+                  context.read<AppConfigService>().refresh();
+                  showLeadxBanner(
+                    context,
+                    title: 'Currency Synced',
+                    body: 'Currency configuration synced with backend.',
+                    icon: const NativeIcon.symbol('indianrupeesign', fallback: Icons.sync),
+                  );
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.sync_rounded,
+                    size: 18,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthController>();
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    final emp = auth.me?.data;
-    final canPop = Navigator.of(context).canPop();
-
-    return Scaffold(
-      body: NativeNavigationBar(
-        leading: canPop
-            ? NativeBarButton(
-                icon: const NativeIcon.symbol('chevron.left', fallback: Icons.arrow_back),
-                title: 'Back',
-                onPressed: () => Navigator.of(context).pop(),
-              )
-            : null,
-        title: const NativeBarTitle(
-          title: 'Profile & Settings',
-          capsule: false,
-        ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          children: [
-            // ── Message Banner ──────────────────────────────────────
-            if (_msg != null) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: _msgType == 'err'
-                      ? (isDark ? const Color(0xFF3F1B1B) : const Color(0xFFFEE2E2))
-                      : _msgType == 'warn'
-                          ? (isDark ? const Color(0xFF3F311B) : const Color(0xFFFEF3C7))
-                          : (isDark ? const Color(0xFF1B3F27) : const Color(0xFFDCFCE7)),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: _msgType == 'err'
-                        ? const Color(0xFFEF4444)
-                        : _msgType == 'warn'
-                            ? const Color(0xFFF59E0B)
-                            : const Color(0xFF22C55E),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _msgType == 'err'
-                          ? Icons.error_outline_rounded
-                          : _msgType == 'warn'
-                              ? Icons.warning_amber_rounded
-                              : Icons.check_circle_outline_rounded,
-                      size: 18,
-                      color: _msgType == 'err'
-                          ? const Color(0xFFEF4444)
-                          : _msgType == 'warn'
-                              ? const Color(0xFFF59E0B)
-                              : const Color(0xFF22C55E),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _msg!,
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          color: _msgType == 'err'
-                              ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
-                              : _msgType == 'warn'
-                                  ? (isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E))
-                                  : (isDark ? const Color(0xFF86EFAC) : const Color(0xFF166534)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // ── Profile Card ─────────────────────────────────────────
-            if (emp != null) ...[
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E22) : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                  boxShadow: [
+  Widget _buildSegmentButton({
+    required String title,
+    required bool selected,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: selected
+                ? [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.12),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1.5),
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  children: [
-                    // Avatar & Monogram with Status Dot
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 68,
-                          height: 68,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isDark ? const Color(0xFF2E2E36) : const Color(0xFF171717),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF44444C) : const Color(0xFF262626),
-                              width: 2,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              emp.name.trim().isNotEmpty ? emp.name.trim()[0].toUpperCase() : 'E',
-                              style: const TextStyle(
-                                fontFamily: AppTypography.fontFamily,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 26,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 2,
-                          bottom: 2,
-                          child: Container(
-                            width: 15,
-                            height: 15,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF22C55E),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
-                                width: 2.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                  ]
+                : null,
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              color: selected
+                  ? (isDark ? const Color(0xFF020617) : Colors.white)
+                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-                    // Full Name
-                    Text(
-                      emp.name,
-                      style: TextStyle(
-                        fontFamily: AppTypography.fontFamily,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                        color: cs.onSurface,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+  // ── 4. Change Password Section ──────────────────────────────────────
+  Widget _buildPasswordCard({
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Change password',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Changing the password signs out this account on all other devices.',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 11,
+              color: textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
 
-                    if (emp.email != null && emp.email!.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        emp.email!,
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 12.5,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+          // Current Password
+          _buildStitchInputField(
+            label: 'Current password',
+            controller: _curPass,
+            placeholder: 'Current password',
+            obscureText: _obscureCur,
+            isDark: isDark,
+            suffix: IconButton(
+              icon: Icon(
+                _obscureCur ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 18,
+                color: textSecondary,
+              ),
+              onPressed: () => setState(() => _obscureCur = !_obscureCur),
+            ),
+          ),
+          const SizedBox(height: 12),
 
-                    const SizedBox(height: 10),
-                    // Username & Account Status Pills
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF26262B) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '@${emp.username}',
-                                style: TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              GestureDetector(
-                                onTap: () {
-                                  Clipboard.setData(ClipboardData(text: emp.username ?? ''));
-                                  showLeadxBanner(
-                                    context,
-                                    title: 'Copied',
-                                    body: '@${emp.username} copied to clipboard',
-                                    icon: const NativeIcon.symbol('doc.on.doc', fallback: Icons.copy),
-                                  );
-                                },
-                                child: Icon(
-                                  Icons.copy_rounded,
-                                  size: 12,
-                                  color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        StatusBadge(
-                          status: '${emp.status ?? 'active'} Account',
-                          type: (emp.status ?? 'active') == 'active' ? 'success' : 'danger',
-                          compact: true,
-                        ),
-                      ],
-                    ),
+          // New Password
+          _buildStitchInputField(
+            label: 'New password',
+            controller: _newPass,
+            placeholder: 'New password (8+ chars)',
+            obscureText: _obscureNew,
+            isDark: isDark,
+            suffix: IconButton(
+              icon: Icon(
+                _obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 18,
+                color: textSecondary,
+              ),
+              onPressed: () => setState(() => _obscureNew = !_obscureNew),
+            ),
+          ),
+          const SizedBox(height: 12),
 
-                    const SizedBox(height: 16),
-                    Divider(
-                      height: 1,
-                      color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFF1F5F9),
-                    ),
-                    const SizedBox(height: 14),
+          // Confirm New Password
+          _buildStitchInputField(
+            label: 'Confirm new password',
+            controller: _confPass,
+            placeholder: 'Confirm new password',
+            obscureText: _obscureConf,
+            isDark: isDark,
+            suffix: IconButton(
+              icon: Icon(
+                _obscureConf ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 18,
+                color: textSecondary,
+              ),
+              onPressed: () => setState(() => _obscureConf = !_obscureConf),
+            ),
+          ),
+          const SizedBox(height: 18),
 
-                    // 2x2 Grid of Account Detail Tiles
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildDetailTile(
-                            context: context,
-                            label: 'Employee ID',
-                            value: '#${emp.id}',
-                            icon: Icons.badge_outlined,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildDetailTile(
-                            context: context,
-                            label: 'System Role',
-                            value: (emp.role ?? 'Employee').toUpperCase(),
-                            icon: Icons.shield_outlined,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildDetailTile(
-                            context: context,
-                            label: 'Assigned Team',
-                            value: emp.team?.teamName ?? 'None',
-                            icon: Icons.groups_outlined,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _buildDetailTile(
-                            context: context,
-                            label: 'Team Code',
-                            value: emp.team?.teamCode ?? '—',
-                            icon: Icons.tag_rounded,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF222226) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Team assignment and role permissions are managed exclusively by Super Admin.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 10.5,
-                          color: cs.onSurfaceVariant.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ),
-                  ],
+          // Submit Password Change Button
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                elevation: isDark ? 2 : 1,
+                shadowColor: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : const Color(0xFF0F172A).withValues(alpha: 0.2),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(height: 14),
-            ],
+              onPressed: _changingPassword ? null : _changePassword,
+              child: _changingPassword
+                  ? const LeadxFlickrLoading(size: 22)
+                  : const Text(
+                      'Change password',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            // ── Personal Information / Contact Details ────────────────
+  // ── 5. Sign Out Danger Zone ─────────────────────────────────────────
+  Widget _buildSignOutDangerZone({required bool isDark}) {
+    final dangerBg = isDark ? const Color(0xFF1C0D11) : const Color(0xFFFFF1F2);
+    final dangerBorder = isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFE4E6);
+    final iconBoxBg = isDark ? const Color(0xFF2E1217) : Colors.white;
+    final iconBoxBorder = isDark ? const Color(0xFF881337) : const Color(0xFFFECDD3);
+    final iconColor = isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48);
+
+    return InkWell(
+      onTap: _logout,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: dangerBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: dangerBorder, width: 1),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
             Container(
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
-                  width: 1,
-                ),
+                color: iconBoxBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: iconBoxBorder),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 4,
                   ),
                 ],
               ),
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.edit_note_rounded, size: 20, color: cs.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Personal Information',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Full Name
-                  _buildField(
-                    context: context,
-                    label: 'Full Name',
-                    controller: _nameCtrl,
-                    prefixIcon: Icons.person_outline_rounded,
-                    hintText: 'Enter your full name',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Editable Username
-                  _buildField(
-                    context: context,
-                    label: 'Username',
-                    controller: _userCtrl,
-                    prefixIcon: Icons.alternate_email_rounded,
-                    hintText: 'Choose a unique username',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Phone
-                  _buildField(
-                    context: context,
-                    label: 'Phone Number',
-                    controller: _phoneCtrl,
-                    prefixIcon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    hintText: 'Enter your phone number',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Email
-                  _buildField(
-                    context: context,
-                    label: 'Email Address',
-                    controller: _emailCtrl,
-                    prefixIcon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                    hintText: 'Enter your email address',
-                  ),
-                  const SizedBox(height: 18),
-
-                  // Save Profile Button
-                  SizedBox(
-                    height: 46,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: isDark ? Colors.white : const Color(0xFF171717),
-                        foregroundColor: isDark ? const Color(0xFF171717) : Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: _saving ? null : _saveContact,
-                      child: _saving
-                          ? const LeadxFlickrLoading(size: 24)
-                          : const Text(
-                              'Save profile',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
+              child: Center(
+                child: Icon(
+                  Icons.logout_rounded,
+                  color: iconColor,
+                  size: 20,
+                ),
               ),
             ),
-            const SizedBox(height: 14),
-
-            // ── Appearance & Preferences ──────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(18),
+            const SizedBox(width: 14),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.tune_rounded, size: 19, color: cs.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Appearance & Preferences',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  const _AppearanceRow(),
-                  const Divider(height: 24),
-                  // Display Currency
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Display currency',
-                              style: AppTypography.body.copyWith(
-                                color: cs.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _currencyLine(context),
-                              style: AppTypography.secondary.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.sync_rounded, size: 20),
-                        color: cs.primary,
-                        onPressed: () => context.read<AppConfigService>().refresh(),
-                        tooltip: 'Sync currency config',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // ── Change Password ───────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E1E22) : Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.lock_outline_rounded, size: 19, color: cs.primary),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Change Password',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontFamily,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
                   Text(
-                    'Changing the password signs out this account on all other devices.',
+                    'Sign out',
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: iconColor,
+                      letterSpacing: -0.1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Revokes this device token on the server.',
                     style: TextStyle(
                       fontFamily: AppTypography.fontFamily,
                       fontSize: 11.5,
-                      color: cs.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Current Password
-                  _buildField(
-                    context: context,
-                    label: 'Current Password',
-                    controller: _curPass,
-                    prefixIcon: Icons.key_outlined,
-                    obscureText: _obscureCur,
-                    hintText: 'Enter your current password',
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureCur ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                        size: 18,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      onPressed: () => setState(() => _obscureCur = !_obscureCur),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // New Password
-                  _buildField(
-                    context: context,
-                    label: 'New Password',
-                    controller: _newPass,
-                    prefixIcon: Icons.lock_reset_rounded,
-                    obscureText: _obscureNew,
-                    hintText: 'At least 8 characters with numbers & letters',
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                        size: 18,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      onPressed: () => setState(() => _obscureNew = !_obscureNew),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Confirm Password
-                  _buildField(
-                    context: context,
-                    label: 'Confirm New Password',
-                    controller: _confPass,
-                    prefixIcon: Icons.lock_outline_rounded,
-                    obscureText: _obscureConf,
-                    hintText: 'Re-enter your new password',
-                    suffix: IconButton(
-                      icon: Icon(
-                        _obscureConf ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                        size: 18,
-                        color: cs.onSurfaceVariant,
-                      ),
-                      onPressed: () => setState(() => _obscureConf = !_obscureConf),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  SizedBox(
-                    height: 46,
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: cs.onSurface,
-                        side: BorderSide(
-                          color: isDark ? const Color(0xFF333338) : const Color(0xFFE2E8F0),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      onPressed: _changingPassword ? null : _changePassword,
-                      child: _changingPassword
-                          ? const LeadxFlickrLoading(size: 24)
-                          : const Text(
-                              'Update Password',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                      fontWeight: FontWeight.w500,
+                      color: iconColor.withValues(alpha: 0.8),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-
-            // ── Sign Out ──────────────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF2E1919) : const Color(0xFFFFF1F2),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFE4E6),
-                  width: 1,
-                ),
-              ),
-              child: Material(
-                type: MaterialType.transparency,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: _logout,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 20),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Sign out',
-                                style: TextStyle(
-                                  fontFamily: AppTypography.fontFamily,
-                                  color: Color(0xFFEF4444),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14.5,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Revokes this device token on the server.',
-                                style: TextStyle(
-                                  fontFamily: AppTypography.fontFamily,
-                                  color: const Color(0xFFEF4444).withValues(alpha: 0.8),
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: const Color(0xFFEF4444).withValues(alpha: 0.6),
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: iconColor.withValues(alpha: 0.6),
+              size: 20,
             ),
-            const SizedBox(height: 18),
-
-            Center(
-              child: Text(
-                'LeadX Employee App · ${AppConstants.appName}',
-                style: AppTypography.caption.copyWith(color: cs.onSurfaceVariant),
-              ),
-            ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -1044,65 +1489,5 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _currencyLine(BuildContext context) {
     final cfg = context.watch<AppConfigService>().currency;
     return '${cfg.symbol} ${cfg.code} · ${cfg.decimalPlaces} decimals · symbol ${cfg.symbolPosition}';
-  }
-}
-
-/// Theme-mode row bound to the persisted preferences.
-class _AppearanceRow extends StatelessWidget {
-  const _AppearanceRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final theme = context.watch<ThemeController>();
-    final selectedIndex = switch (theme.mode) {
-      ThemeMode.system => 0,
-      ThemeMode.light => 1,
-      ThemeMode.dark => 2,
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.palette_outlined, size: 20, color: cs.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Appearance Mode',
-                      style: AppTypography.body.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Select theme appearance',
-                    style: AppTypography.secondary.copyWith(color: cs.onSurfaceVariant, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: NativeSegmentedControl(
-            labels: const ['System', 'Light', 'Dark'],
-            selectedIndex: selectedIndex,
-            onValueChanged: (index) {
-              final next = switch (index) {
-                1 => ThemeMode.light,
-                2 => ThemeMode.dark,
-                _ => ThemeMode.system,
-              };
-              theme.setMode(next);
-            },
-            selectedColor: cs.primary,
-            selectedTextColor: cs.onPrimary,
-          ),
-        ),
-      ],
-    );
   }
 }

@@ -28,13 +28,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   m.Dashboard? _data;
   bool _loading = true;
   String? _error;
-  String _view = 'my_data';
-
-  /// True while the API has denied `view=team_data` — the screen then keeps
-  /// My Data figures with an unobtrusive notice.
-  bool _teamDenied = false;
-
-  String get _viewScope => _view == 'team_data' ? 'Team aggregate' : 'Individual performance';
 
   /// Customization state for the metric cards. Persisted to local storage so
   /// the layout choice survives a reload / app restart.
@@ -77,8 +70,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  /// Loads the dashboard for [_view]; a rejected team_data view falls back
-  /// to the My Data payload so the screen never dead-ends on a 403.
   Future<void> _load() async {
     final services = context.read<AppServices>();
     setState(() {
@@ -86,40 +77,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _error = null;
     });
 
-    final view = _view;
     try {
       context.read<AppConfigService>().refresh();
-      final res = await services.api.dashboard(view: view);
+      final res = await services.api.dashboard();
       if (!mounted) return;
       final parsed = m.Dashboard.fromJson(res);
       setState(() {
         _data = parsed;
         _loading = false;
-        if (view == 'team_data' && parsed.view == 'my_data' && parsed.warning != null) {
-          _teamDenied = true;
-          _view = 'my_data';
-        } else {
-          _teamDenied = false;
-          _view = parsed.view.isNotEmpty ? parsed.view : view;
-        }
       });
       return;
     } on ApiException catch (e) {
-      if (view == 'team_data' && (e.isForbidden || e.isNotFound)) {
-        try {
-          final res = await services.api.dashboard(view: 'my_data');
-          if (!mounted) return;
-          final parsed = m.Dashboard.fromJson(res);
-          setState(() {
-            _data = parsed;
-            _loading = false;
-            _error = null;
-            _view = 'my_data';
-            _teamDenied = true;
-          });
-          return;
-        } catch (_) {}
-      }
       if (!mounted) return;
       setState(() {
         _error = e.isNetwork || e.isTimeout ? 'No connection. Retrying…' : e.message;
@@ -229,7 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             // ── Page title ─────────────────────────────────────────
             Text(
-              _view == 'team_data' ? 'Team dashboard' : 'My dashboard',
+              'My dashboard',
               style: TextStyle(
                 fontFamily: AppTypography.fontFamily,
                 fontSize: 20,
@@ -240,7 +208,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '$employeeName • $_viewScope',
+              '$employeeName • Individual performance',
               style: TextStyle(
                 fontFamily: AppTypography.fontFamily,
                 fontSize: 13,
@@ -249,37 +217,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Header control: data scope ─────────────────────────
-            DataScopeSegmentControl(
-              selectedView: _view,
-              onChanged: (next) {
-                if (next == _view) return;
-                setState(() {
-                  _view = next;
-                  _teamDenied = false;
-                });
-                _load();
-              },
-            ),
-            const SizedBox(height: 16),
-
             // ── Notices ────────────────────────────────────────────
-            if (_teamDenied) ...[
-              const _ScopeNotice(),
-              const SizedBox(height: 12),
-            ],
-            if (_view == 'team_data') ...[
-              _TeamDataModeAlert(
-                onSwitchToMyData: () {
-                  setState(() {
-                    _view = 'my_data';
-                    _teamDenied = false;
-                  });
-                  _load();
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
             if (d.warning != null) ...[
               AppCard.surface(
                 context,
@@ -355,26 +293,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final cards = <_MetricCard>[
       if (_cardVisibility['orders_count'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team total orders' : 'Total orders',
+          title: 'Total orders',
           value: '${s.totalOrders}',
           subtitle: 'All time',
         ),
       if (_cardVisibility['sales_value'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team closing value' : 'Closing value',
+          title: 'Closing value',
           value: Fmt.money(s.closingValue),
           subtitle: 'Agreed deal values',
         ),
       if (_cardVisibility['verified_revenue'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team verified revenue' : 'Verified revenue',
+          title: 'Verified revenue',
           value: Fmt.money(s.verifiedRevenue),
           subtitle: 'Cleared collections',
           featured: true,
         ),
       if (_cardVisibility['customers_count'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team customers' : 'Customers',
+          title: 'Customers',
           value: '${s.customersCount}',
           subtitle: 'Client accounts',
         ),
@@ -386,7 +324,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       if (_cardVisibility['pending_payments'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team pending payments' : 'Pending payments',
+          title: 'Pending payments',
           value: '${s.pendingPaymentsCount} • ${Fmt.money(s.pendingAmount)}',
           subtitle: 'Outstanding',
         ),
@@ -398,7 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       if (_cardVisibility['follow_ups'] ?? true)
         _MetricCard(
-          title: _view == 'team_data' ? 'Team follow-ups' : 'Follow-ups',
+          title: 'Follow-ups',
           value: '${s.followUps}',
           subtitle: 'Scheduled tasks',
         ),
@@ -444,7 +382,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildRecentOrders(BuildContext context, m.Dashboard d, bool isDark) {
     final cs = Theme.of(context).colorScheme;
-    final title = _view == 'team_data' ? 'Recent team orders' : 'Recent orders';
+    const title = 'Recent orders';
     final sub = d.recentOrders.isEmpty
         ? 'No orders recorded yet'
         : '${d.recentOrders.length} most recent';
@@ -995,117 +933,6 @@ class _ExpiringSubRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _TeamDataModeAlert extends StatelessWidget {
-  const _TeamDataModeAlert({required this.onSwitchToMyData});
-
-  final VoidCallback onSwitchToMyData;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF),
-        borderRadius: BorderRadius.circular(AppColors.radiusLg),
-        border: Border.all(
-          color: isDark ? const Color(0xFF3730A3) : const Color(0xFFC7D2FE),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 16,
-                color: isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    style: TextStyle(
-                      fontFamily: AppTypography.fontFamily,
-                      fontSize: 13,
-                      color: isDark ? const Color(0xFFE0E7FF) : const Color(0xFF312E81),
-                    ),
-                    children: const [
-                      TextSpan(
-                        text: 'Team data mode (view-only): ',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      TextSpan(
-                        text:
-                            'Aggregate team metrics. Creation, editing, approvals and deletions are disabled in this view.',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: InkWell(
-              onTap: onSwitchToMyData,
-              child: Text(
-                'Switch to my data',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4338CA),
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScopeNotice extends StatelessWidget {
-  const _ScopeNotice();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = cs.brightness == Brightness.dark;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: cs.onSurface.withValues(alpha: isDark ? 0.08 : 0.04),
-          borderRadius: BorderRadius.circular(AppColors.radiusMd),
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.info_outline, size: 15, color: cs.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Team data not available — showing your data',
-                style: AppTypography.caption.copyWith(
-                  fontSize: 12,
-                  color: cs.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
