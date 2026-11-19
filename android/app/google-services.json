@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "375951416858",
+    "project_id": "leadx-eb5c5",
+    "storage_bucket": "leadx-eb5c5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:375951416858:android:0e2ca97f17896aaf893ba3",
+        "android_client_info": {
+          "package_name": "com.example.leadx"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCW4rewfxMk594yIERrodVqSwQ_LxXRQP0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
