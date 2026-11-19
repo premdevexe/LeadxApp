@@ -27,11 +27,16 @@ class AppConfigService extends ChangeNotifier {
 
   final LeadxApi _api = LeadxApi(ApiClient.shared);
   final String _cacheKey = 'leadx.app_config.v1';
+  final String _logoCacheKey = 'leadx.site_logo.v1';
 
   CurrencyConfig _currency = CurrencyConfig.fallback;
+  String? _siteLogoUrl;
+  String _siteName = 'LeadX';
   bool _loading = false;
 
   CurrencyConfig get currency => _currency;
+  String? get siteLogoUrl => _siteLogoUrl;
+  String get siteName => _siteName;
   bool get isLoaded => _loading == false;
 
   /// Read the cached config (offline display). Call once at startup;
@@ -48,6 +53,8 @@ class AppConfigService extends ChangeNotifier {
         // Corrupt cache — keep the safe fallback.
       }
     }
+    _siteLogoUrl = prefs.getString(_logoCacheKey) ??
+        'https://leadx.cloudaspiresolutions.in/uploads/branding/logo_1794987898_hYJudvzk.png';
     notifyListeners();
   }
 
@@ -64,12 +71,31 @@ class AppConfigService extends ChangeNotifier {
       final data = res['data'] as Map<String, dynamic>?;
       final next = CurrencyConfig.fromJson(data);
       _currency = next;
+
+      final serverLogo = data?['site_logo'] as String? ??
+          data?['logo_url'] as String? ??
+          data?['site_logo_url'] as String?;
+      if (serverLogo != null && serverLogo.isNotEmpty) {
+        _siteLogoUrl = serverLogo;
+      } else {
+        _siteLogoUrl ??=
+            'https://leadx.cloudaspiresolutions.in/uploads/branding/logo_1794987898_hYJudvzk.png';
+      }
+
+      final serverName = data?['site_name'] as String?;
+      if (serverName != null && serverName.isNotEmpty) {
+        _siteName = serverName;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_cacheKey, jsonEncode(next.toMap()));
+      if (_siteLogoUrl != null) {
+        await prefs.setString(_logoCacheKey, _siteLogoUrl!);
+      }
       notifyListeners();
       return true;
     } on Object {
-      // Network / auth hiccup: keep the cached currency.
+      // Network / auth hiccup: keep the cached currency & logo.
       return false;
     } finally {
       _loading = false;

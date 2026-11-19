@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
+import '../../core/services/app_config_service.dart';
 import '../format.dart';
 import '../models/subscription.dart' show ListMeta;
 
@@ -1097,16 +1099,13 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
             ),
             const SizedBox(width: 8),
           ],
-          // Brand: the app logo (same asset as the login screen's brand
-          // block), with the "L" tile as the no-logo fallback.
-          SizedBox(
-            height: 28,
-            child: Image.asset(
-              'assets/images/leadx_logo.png',
-              height: 28,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (_, _, _) => Container(
+          // Brand: live server site logo (fetching dynamically from server)
+          Builder(
+            builder: (context) {
+              final config = context.watch<AppConfigService>();
+              final siteLogoUrl = config.siteLogoUrl;
+
+              Widget fallbackWidget = Container(
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
@@ -1122,19 +1121,38 @@ class LeadxNavHeader extends StatelessWidget implements PreferredSizeWidget {
                     fontSize: 14,
                   ),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'LeadX',
-            style: TextStyle(
-              fontFamily: AppTypography.fontFamily,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.3,
-              color: ink,
-            ),
+              );
+
+              Widget logoWidget;
+              if (siteLogoUrl != null && siteLogoUrl.isNotEmpty) {
+                logoWidget = Image.network(
+                  siteLogoUrl,
+                  height: 28,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  errorBuilder: (_, _, _) => Image.asset(
+                    'assets/images/leadx_logo.png',
+                    height: 28,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (_, _, _) => fallbackWidget,
+                  ),
+                );
+              } else {
+                logoWidget = Image.asset(
+                  'assets/images/leadx_logo.png',
+                  height: 28,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
+                  errorBuilder: (_, _, _) => fallbackWidget,
+                );
+              }
+
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 28, maxWidth: 140),
+                child: logoWidget,
+              );
+            },
           ),
           if (wide) ...[
             const SizedBox(width: 8),

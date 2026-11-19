@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/design/app_typography.dart';
 import '../../core/errors/api_exception.dart';
+import '../../core/services/app_config_service.dart';
 import 'auth_controller.dart';
 
 /// The single LeadX screen: the Employee login, styled to match
@@ -160,19 +161,34 @@ class _LoginScreenState extends State<LoginScreen> {
   /// `.auth-brand--stacked` → logo (52px tall, max 160px wide, contain)
   /// with the 20px semibold "Employee Login" title 12px below.
   Widget _brand() {
+    final siteLogoUrl = context.watch<AppConfigService>().siteLogoUrl;
+
+    Widget fallbackImage = Image.asset(
+      'assets/images/leadx_logo.png',
+      height: 52,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (_, _, _) => const _BrandFallback(),
+    );
+
+    Widget logoImage;
+    if (siteLogoUrl != null && siteLogoUrl.isNotEmpty) {
+      logoImage = Image.network(
+        siteLogoUrl,
+        height: 52,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (_, _, _) => fallbackImage,
+      );
+    } else {
+      logoImage = fallbackImage;
+    }
+
     return Column(
       children: [
-        // `img.auth-brand-img` (the preview serves the admin-uploaded
-        // logo); the initial tile is the blade's no-logo fallback.
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 160),
-          child: Image.asset(
-            'assets/images/leadx_logo.png',
-            height: 52,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
-            errorBuilder: (_, _, _) => const _BrandFallback(),
-          ),
+          child: logoImage,
         ),
         const SizedBox(height: 12), // sp-3, `.auth-page .auth-title`
         Text(

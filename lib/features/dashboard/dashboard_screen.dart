@@ -86,39 +86,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _error = null;
     });
 
-    var view = _view;
+    final view = _view;
     try {
       context.read<AppConfigService>().refresh();
       final res = await services.api.dashboard(view: view);
       if (!mounted) return;
+      final parsed = m.Dashboard.fromJson(res);
       setState(() {
-        _data = m.Dashboard.fromJson(res);
+        _data = parsed;
         _loading = false;
-        _teamDenied = false;
+        if (view == 'team_data' && parsed.view == 'my_data' && parsed.warning != null) {
+          _teamDenied = true;
+          _view = 'my_data';
+        } else {
+          _teamDenied = false;
+          _view = parsed.view.isNotEmpty ? parsed.view : view;
+        }
       });
       return;
     } on ApiException catch (e) {
       if (view == 'team_data' && (e.isForbidden || e.isNotFound)) {
-        view = 'my_data';
-      }
-      try {
-        final res = await services.api.dashboard(view: view);
-        if (!mounted) return;
-        setState(() {
-          _data = m.Dashboard.fromJson(res);
-          _loading = false;
-          _error = null;
-        });
-      } on ApiException catch (e2) {
-        if (!mounted) return;
-        setState(() {
-          _error = e2.isNetwork || e2.isTimeout ? 'No connection. Retrying…' : e2.message;
-          _loading = false;
-        });
+        try {
+          final res = await services.api.dashboard(view: 'my_data');
+          if (!mounted) return;
+          final parsed = m.Dashboard.fromJson(res);
+          setState(() {
+            _data = parsed;
+            _loading = false;
+            _error = null;
+            _view = 'my_data';
+            _teamDenied = true;
+          });
+          return;
+        } catch (_) {}
       }
       if (!mounted) return;
       setState(() {
-        _teamDenied = _view == 'team_data' && _error == null && _data != null;
+        _error = e.isNetwork || e.isTimeout ? 'No connection. Retrying…' : e.message;
+        _loading = false;
       });
     }
   }
