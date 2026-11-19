@@ -12,6 +12,7 @@ import '../../shared/format.dart';
 import '../../shared/models/customer.dart';
 import '../../shared/models/subscription.dart' show ListMeta;
 import '../../shared/widgets/app_widgets.dart';
+import '../../shared/widgets/skeleton_loading.dart';
 import '../auth/auth_controller.dart';
 import '../orders/order_create_sheet.dart';
 import '../search/global_search_screen.dart';
@@ -141,7 +142,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     final displayed = _filteredCustomers;
 
     final content = _loading && _items.isEmpty
-        ? const LoadingScreen()
+        ? const SkeletonListView(itemCount: 6, cardHeight: 96)
         : RefreshIndicator(
             onRefresh: _load,
             child: _error != null && _items.isEmpty

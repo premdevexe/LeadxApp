@@ -9,7 +9,9 @@ import '../../core/design/theme_controller.dart';
 import '../../core/errors/api_exception.dart';
 import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
+import '../../core/services/biometric_service.dart';
 import '../../core/utils/native_banner_helper.dart';
+import '../../core/utils/native_feedback.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
 
@@ -41,10 +43,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _msg;
   String _msgType = 'ok';
 
+  bool _biometricSupported = false;
+  bool _biometricEnabled = false;
+  bool _lockOnResume = false;
+
   @override
   void initState() {
     super.initState();
     _seed();
+    _loadBiometricSettings();
+  }
+
+  Future<void> _loadBiometricSettings() async {
+    final supported = await BiometricService.shared.canAuthenticate();
+    if (!mounted) return;
+    setState(() {
+      _biometricSupported = supported;
+      _biometricEnabled = BiometricService.shared.isBiometricEnabled;
+      _lockOnResume = BiometricService.shared.lockOnResume;
+    });
+  }
+
+  Future<void> _toggleBiometrics(bool value) async {
+    NativeFeedback.selection();
+    if (value) {
+      final result = await BiometricService.shared.authenticateDetailed(
+        reason: 'Authenticate to enable biometric protection for LeadX',
+      );
+      if (!result.success) {
+        if (!mounted) return;
+        showLeadxBanner(
+          context,
+          title: 'Authentication Failed',
+          body: result.errorMessage ?? 'Biometric unlock could not be verified.',
+          icon: const NativeIcon.symbol('xmark.circle.fill', fallback: Icons.cancel_outlined),
+        );
+        return;
+      }
+    }
+    await BiometricService.shared.setBiometricEnabled(value);
+    await BiometricService.shared.setLockOnResume(value);
+    if (!mounted) return;
+    setState(() {
+      _biometricEnabled = value;
+      _lockOnResume = value;
+    });
+    showLeadxBanner(
+      context,
+      title: value ? 'Biometrics Activated' : 'Biometrics Deactivated',
+      body: value
+          ? 'LeadX is now protected with biometric unlock.'
+          : 'Biometric verification has been disabled.',
+      icon: NativeIcon.symbol(
+        value ? 'faceid' : 'lock.open',
+        fallback: value ? Icons.fingerprint_rounded : Icons.lock_open_rounded,
+      ),
+    );
+  }
+
+  Future<void> _toggleLockOnResume(bool value) async {
+    NativeFeedback.selection();
+    await BiometricService.shared.setLockOnResume(value);
+    if (!mounted) return;
+    setState(() {
+      _lockOnResume = value;
+    });
   }
 
   void _seed() {
@@ -269,6 +332,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // ── Appearance & Preferences ──────────────────────────────
             _buildAppearanceCard(
+              isDark: isDark,
+              cardBg: cardBg,
+              cardBorder: cardBorder,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+            const SizedBox(height: 16),
+
+            // ── Security & Biometrics ─────────────────────────────────
+            _buildSecurityBiometricsCard(
               isDark: isDark,
               cardBg: cardBg,
               cardBorder: cardBorder,
@@ -1268,6 +1341,175 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ── 3b. Security & Biometrics Section ──────────────────────────────
+  Widget _buildSecurityBiometricsCard({
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SECURITY & BIOMETRICS',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Biometric Unlock Switch
+          InkWell(
+            onTap: _biometricSupported
+                ? () => _toggleBiometrics(!_biometricEnabled)
+                : () {
+                    showLeadxBanner(
+                      context,
+                      title: 'Biometrics Unavailable',
+                      body: 'No fingerprint, Face ID, or screen lock detected. Please enable a screen lock PIN, pattern, or biometrics in device settings.',
+                      icon: const NativeIcon.symbol('exclamationmark.triangle.fill', fallback: Icons.warning_amber_rounded),
+                    );
+                  },
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.fingerprint_rounded,
+                    size: 20,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Biometric Unlock',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: textPrimary,
+                        ),
+                      ),
+                      Text(
+                        _biometricSupported
+                            ? 'Fingerprint or Face ID login protection'
+                            : 'Tap to see requirements (PIN/Fingerprint)',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 11,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: _biometricEnabled,
+                  activeThumbColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                  onChanged: _biometricSupported ? _toggleBiometrics : null,
+                ),
+              ],
+            ),
+          ),
+
+          if (_biometricSupported && _biometricEnabled) ...[
+            const SizedBox(height: 14),
+            Divider(
+              height: 1,
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            ),
+            const SizedBox(height: 14),
+
+            // Lock on Resume Switch
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : Colors.transparent,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.security_rounded,
+                    size: 19,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Lock App on Resume',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Prompt biometrics when reopening app',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 11,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: _lockOnResume,
+                  activeThumbColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                  onChanged: _toggleLockOnResume,
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

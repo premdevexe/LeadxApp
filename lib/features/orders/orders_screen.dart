@@ -12,6 +12,7 @@ import '../../shared/format.dart';
 import '../../shared/models/order.dart';
 import '../../shared/models/subscription.dart' show ListMeta;
 import '../../shared/widgets/app_widgets.dart';
+import '../../shared/widgets/skeleton_loading.dart';
 import '../auth/auth_controller.dart';
 import 'order_create_screen.dart';
 import 'order_detail_screen.dart';
@@ -137,7 +138,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final displayedOrders = _filteredOrders;
 
     final content = _loading && _orders.isEmpty
-        ? const LoadingScreen()
+        ? const SkeletonListView(itemCount: 6, cardHeight: 110)
         : RefreshIndicator(
             onRefresh: _load,
             child: _error != null && _orders.isEmpty

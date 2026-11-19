@@ -11,6 +11,7 @@ import '../../shared/format.dart';
 import '../../shared/models/follow_up.dart';
 import '../../shared/models/subscription.dart' show ListMeta;
 import '../../shared/widgets/app_widgets.dart';
+import '../../shared/widgets/skeleton_loading.dart';
 import '../../core/utils/native_banner_helper.dart';
 import '../search/global_search_screen.dart';
 import 'follow_up_create_sheet.dart';
@@ -155,7 +156,7 @@ class _FollowUpsScreenState extends State<FollowUpsScreen> {
     final displayed = _displayedItems;
 
     final content = _loading && _items.isEmpty
-        ? const LoadingScreen()
+        ? const SkeletonListView(itemCount: 6, cardHeight: 110)
         : RefreshIndicator(
             onRefresh: _load,
             child: _error != null && _items.isEmpty

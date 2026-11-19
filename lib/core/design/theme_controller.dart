@@ -7,6 +7,12 @@ class ThemeController extends ChangeNotifier {
 
   static const _key = 'leadx_theme_mode';
 
+  bool isDark(BuildContext context) {
+    if (mode == ThemeMode.dark) return true;
+    if (mode == ThemeMode.light) return false;
+    return MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+  }
+
   Future<void> setMode(ThemeMode next) async {
     mode = next;
     notifyListeners();

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_typography.dart';
 import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
+import '../../core/services/biometric_service.dart';
+import '../../core/utils/native_feedback.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../auth/auth_controller.dart';
 import '../customer_issues/customer_issues_screen.dart';
@@ -31,8 +34,66 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
+  DateTime? _lastBackTime;
+  bool _isLocked = false;
+  bool _isAuthenticating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (BiometricService.shared.isBiometricEnabled) {
+      _isLocked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _triggerBiometricAuth();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (BiometricService.shared.isBiometricEnabled &&
+          BiometricService.shared.lockOnResume &&
+          !_isLocked) {
+        setState(() {
+          _isLocked = true;
+        });
+        _triggerBiometricAuth();
+      }
+    }
+  }
+
+  Future<void> _triggerBiometricAuth() async {
+    if (_isAuthenticating) return;
+    _isAuthenticating = true;
+
+    final result = await BiometricService.shared.authenticateDetailed(
+      reason: 'Authenticate to unlock LeadX CRM',
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isAuthenticating = false;
+      if (result.success) {
+        _isLocked = false;
+      }
+    });
+
+    if (result.success) {
+      NativeFeedback.light();
+    } else {
+      NativeFeedback.error();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,61 +122,242 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
 
-    return Scaffold(
-      drawer: menu,
-      endDrawer: menu,
-      body: AnimatedIndexedStack(index: _index, children: screens),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: cs.surface,
-          border: Border(
-            top: BorderSide(
-              color: cs.outlineVariant.withValues(alpha: 0.35),
-              width: 1,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        // If app is currently locked by biometrics, allow immediate exit
+        if (_isLocked) {
+          SystemNavigator.pop();
+          return;
+        }
+
+        // If not on the primary dashboard tab, navigate back to dashboard
+        if (_index != 0) {
+          NativeFeedback.selection();
+          setState(() => _index = 0);
+          return;
+        }
+
+        // On dashboard tab: require double back press within 2 seconds to exit app
+        final now = DateTime.now();
+        if (_lastBackTime == null || now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
+          _lastBackTime = now;
+          NativeFeedback.light();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit LeadX'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
+
+        // Allow app exit on second back press
+        SystemNavigator.pop();
+      },
+      child: Stack(
+        children: [
+          Scaffold(
+            drawer: menu,
+            endDrawer: menu,
+            body: AnimatedIndexedStack(index: _index, children: screens),
+            bottomNavigationBar: SafeArea(
+              top: false,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  border: Border(
+                    top: BorderSide(
+                      color: cs.outlineVariant.withValues(alpha: 0.35),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: NavigationBar(
+                  height: 62,
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
+                  indicatorColor: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF2A2A2A)
+                      : const Color(0xFFF1F5F9),
+                  indicatorShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  selectedIndex: _index,
+                  onDestinationSelected: (i) {
+                    if (i != _index) {
+                      NativeFeedback.selection();
+                      setState(() => _index = i);
+                    }
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.dashboard_outlined, size: 20),
+                      selectedIcon: Icon(Icons.dashboard_rounded, size: 20),
+                      label: 'Dashboard',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.receipt_long_outlined, size: 20),
+                      selectedIcon: Icon(Icons.receipt_long_rounded, size: 20),
+                      label: 'Orders',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.task_alt_outlined, size: 20),
+                      selectedIcon: Icon(Icons.task_alt_rounded, size: 20),
+                      label: 'Follow-ups',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.notifications_none_rounded, size: 20),
+                      selectedIcon: Icon(Icons.notifications_rounded, size: 20),
+                      label: 'Notifications',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.person_outline_rounded, size: 20),
+                      selectedIcon: Icon(Icons.person_rounded, size: 20),
+                      label: 'Profile',
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-        child: NavigationBar(
-          height: 62,
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          indicatorColor: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF2A2A2A)
-              : const Color(0xFFF1F5F9),
-          indicatorShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+          if (_isLocked)
+            _buildLockOverlay(
+              isDark: Theme.of(context).brightness == Brightness.dark,
+              employeeName: employeeName,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLockOverlay({
+    required bool isDark,
+    required String employeeName,
+  }) {
+    final pageBg = isDark ? const Color(0xFF090D16) : const Color(0xFFF8FAFC);
+    final cardBg = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final cardBorder = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textSecondary = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return Material(
+      color: pageBg,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Spacer(flex: 2),
+
+              // Lock Icon Tile
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: cardBorder, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.06),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.lock_rounded,
+                    size: 42,
+                    color: textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              Text(
+                'LeadX is Locked',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              Text(
+                'Welcome back, $employeeName\nAuthenticate to unlock your CRM session',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: AppTypography.fontFamily,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                  height: 1.45,
+                  color: textSecondary,
+                ),
+              ),
+
+              const Spacer(flex: 2),
+
+              // Unlock Button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _isAuthenticating ? null : _triggerBiometricAuth,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                    foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: _isAuthenticating
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.fingerprint_rounded, size: 22),
+                  label: Text(
+                    _isAuthenticating ? 'Authenticating…' : 'Unlock with Biometrics',
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Sign Out Option
+              TextButton(
+                onPressed: () {
+                  context.read<AuthController>().logout();
+                },
+                child: Text(
+                  'Sign out of account',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: textSecondary,
+                  ),
+                ),
+              ),
+
+              const Spacer(),
+            ],
           ),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined, size: 20),
-              selectedIcon: Icon(Icons.dashboard_rounded, size: 20),
-              label: 'Dashboard',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined, size: 20),
-              selectedIcon: Icon(Icons.receipt_long_rounded, size: 20),
-              label: 'Orders',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.task_alt_outlined, size: 20),
-              selectedIcon: Icon(Icons.task_alt_rounded, size: 20),
-              label: 'Follow-ups',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.notifications_none_rounded, size: 20),
-              selectedIcon: Icon(Icons.notifications_rounded, size: 20),
-              label: 'Notifications',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline_rounded, size: 20),
-              selectedIcon: Icon(Icons.person_rounded, size: 20),
-              label: 'Profile',
-            ),
-          ],
         ),
       ),
     );

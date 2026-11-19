@@ -11,6 +11,7 @@ import 'package:leadx/shared/models/follow_up.dart';
 import 'package:leadx/shared/models/order.dart';
 import 'package:leadx/shared/models/payment.dart';
 import 'package:leadx/shared/models/subscription.dart';
+import 'package:leadx/shared/widgets/skeleton_loading.dart';
 
 /// Pure model serialization tests (no Firebase / no network needed).
 void main() {
@@ -349,6 +350,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Page 0'), findsNothing);
       expect(find.text('Page 1'), findsOneWidget);
+    });
+
+    testWidgets('SkeletonListView renders without error and animates shimmer', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SkeletonListView(itemCount: 4, cardHeight: 100),
+          ),
+        ),
+      );
+
+      expect(find.byType(SkeletonListView), findsOneWidget);
+      expect(find.byType(SkeletonShimmer), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 500));
     });
   });
 }

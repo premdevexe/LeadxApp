@@ -12,6 +12,7 @@ import '../../shared/format.dart';
 import '../../shared/models/payment.dart';
 import '../../shared/models/subscription.dart' show ListMeta;
 import '../../shared/widgets/app_widgets.dart';
+import '../../shared/widgets/skeleton_loading.dart';
 import '../../core/utils/native_banner_helper.dart';
 import '../auth/auth_controller.dart';
 import '../search/global_search_screen.dart';
@@ -158,7 +159,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
         const SizedBox(height: 6),
         Expanded(
           child: _loading && _items.isEmpty
-              ? const LoadingScreen()
+              ? const SkeletonListView(itemCount: 6, cardHeight: 100)
               : RefreshIndicator(
                   onRefresh: _load,
                   child: _error != null && _items.isEmpty
