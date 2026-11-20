@@ -55,6 +55,7 @@ class AuthController extends ChangeNotifier {
       _bootstrapping = false;
       notifyListeners();
       _services.startSession(_me!.data.id);
+      _services.push.registerToken();
       return true;
     } on Object {
       // Token stale/revoked — clear and require login.

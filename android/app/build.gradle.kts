@@ -54,6 +54,4 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    implementation("com.google.firebase:firebase-messaging:21.1.0")
-    implementation("com.pusher:push-notifications-android:1.10.0")
 }
