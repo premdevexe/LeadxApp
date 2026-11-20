@@ -50,3 +50,4 @@ app.*.map.json
 # Temporary test scripts
 check_*.php
 test_backup/
+android/.kotlin/
