@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/design/native_chrome.dart';
 
 import '../../core/design/app_colors.dart';
@@ -27,6 +28,9 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
   int _page = 1;
   int _lastPage = 1;
   String _statusFilter = '';
+  int _totalCount = 0;
+  int _stillFacingCount = 0;
+  int _fixedCount = 0;
 
   // Create form state.
   final _customerIds = <int>[];
@@ -67,12 +71,25 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
     });
     try {
       final res = await services.api.customerIssues(
-          status: _statusFilter.isEmpty ? null : _statusFilter, page: _page);
+        status: _statusFilter.isEmpty ? null : _statusFilter,
+        page: _page,
+      );
       final data = (res['data'] as List<dynamic>?) ?? const [];
-      _issues =
-          data.map((e) => CustomerIssue.fromJson(e as Map<String, dynamic>)).toList();
+      _issues = data
+          .map((e) => CustomerIssue.fromJson(e as Map<String, dynamic>))
+          .toList();
       final meta = (res['meta'] as Map<String, dynamic>?) ?? const {};
       _lastPage = (meta['last_page'] as num?)?.toInt() ?? 1;
+      _totalCount = (meta['total_issues'] as num?)?.toInt() ??
+          (_statusFilter.isEmpty ? _issues.length : _totalCount);
+      _stillFacingCount = (meta['still_facing_issues'] as num?)?.toInt() ??
+          (_statusFilter.isEmpty
+              ? _issues.where((i) => i.status.toLowerCase() != 'fixed').length
+              : _stillFacingCount);
+      _fixedCount = (meta['fixed_issues'] as num?)?.toInt() ??
+          (_statusFilter.isEmpty
+              ? _issues.where((i) => i.status.toLowerCase() == 'fixed').length
+              : _fixedCount);
       if (!mounted) return;
       setState(() => _loading = false);
     } on ApiException catch (e) {
@@ -91,10 +108,13 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
     final services = context.read<AppServices>();
     try {
       final res = await services.api.customerIssues(
-          status: _statusFilter.isEmpty ? null : _statusFilter, page: nextPage);
+        status: _statusFilter.isEmpty ? null : _statusFilter,
+        page: nextPage,
+      );
       final data = (res['data'] as List<dynamic>?) ?? const [];
       final more = data
-          .map((e) => CustomerIssue.fromJson(e as Map<String, dynamic>)).toList();
+          .map((e) => CustomerIssue.fromJson(e as Map<String, dynamic>))
+          .toList();
       if (!mounted) return;
       setState(() {
         _issues.addAll(more);
@@ -109,13 +129,14 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
 
   Future<void> _create() async {
     if (_selectedCustomer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Select a customer')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Select a customer')));
       return;
     }
     if (_titleCtrl.text.trim().isEmpty || _descCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Title and description required')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Title and description required')),
+      );
       return;
     }
 
@@ -139,13 +160,17 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(e.isValidation
-                  ? (e.fieldErrors.values.isNotEmpty
+        SnackBar(
+          content: Text(
+            e.isValidation
+                ? (e.fieldErrors.values.isNotEmpty
                       ? e.fieldErrors.values.first.first
                       : 'Validation failed')
-                  : e.message),
-              backgroundColor: Theme.of(context).colorScheme.error));
+                : e.message,
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -182,7 +207,7 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
     final content = Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
           child: LeadGlass.segmentBar(
             context,
             const ['All', 'Still facing', 'Fixed'],
@@ -211,37 +236,58 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
                         )
                       : ListView(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           children: [
                             // Summary Cards mirroring customer_issues/index.blade.php
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Row(
                                 children: [
-                                  Expanded(
-                                    child: StatCard(
-                                      title: 'Total',
-                                      value: '${_issues.length}',
-                                      subtitle: 'Issues logged',
-                                    ),
+                                  _IssueSummaryCard(
+                                    title: 'Total',
+                                    count: _totalCount,
+                                    subtitle: 'All logged',
+                                    accentColor: const Color(0xFF64748B),
+                                    isSelected: _statusFilter.isEmpty,
+                                    onTap: () {
+                                      setState(() {
+                                        _statusFilter = '';
+                                        _page = 1;
+                                      });
+                                      _load();
+                                    },
                                   ),
                                   const SizedBox(width: 8),
-                                  Expanded(
-                                    child: StatCard(
-                                      title: 'Resolved',
-                                      value: '${_issues.where((i) => i.status.toLowerCase() == 'fixed').length}',
-                                      badge: 'Fixed',
-                                      badgeType: 'success',
-                                    ),
+                                  _IssueSummaryCard(
+                                    title: 'Still Facing',
+                                    count: _stillFacingCount,
+                                    subtitle: 'Pending',
+                                    accentColor: const Color(0xFFD97706),
+                                    isSelected: _statusFilter == 'still_facing',
+                                    onTap: () {
+                                      setState(() {
+                                        _statusFilter = 'still_facing';
+                                        _page = 1;
+                                      });
+                                      _load();
+                                    },
                                   ),
                                   const SizedBox(width: 8),
-                                  Expanded(
-                                    child: StatCard(
-                                      title: 'Active',
-                                      value: '${_issues.where((i) => i.status.toLowerCase() != 'fixed').length}',
-                                      badge: 'Pending',
-                                      badgeType: 'warning',
-                                    ),
+                                  _IssueSummaryCard(
+                                    title: 'Fixed',
+                                    count: _fixedCount,
+                                    subtitle: 'Resolved',
+                                    accentColor: const Color(0xFF059669),
+                                    isSelected: _statusFilter == 'fixed',
+                                    onTap: () {
+                                      setState(() {
+                                        _statusFilter = 'fixed';
+                                        _page = 1;
+                                      });
+                                      _load();
+                                    },
                                   ),
                                 ],
                               ),
@@ -254,14 +300,19 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
                                 icon: Icons.support_agent_outlined,
                               )
                             else
-                              ..._issues.map((i) => _IssueCard(
-                                  issue: i, onMarkFixed: () => _markFixed(i))),
+                              ..._issues.map(
+                                (i) => _IssueCard(
+                                  issue: i,
+                                  onMarkFixed: () => _markFixed(i),
+                                ),
+                              ),
                             if (_loadingMore)
                               const Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Center(
-                                      child:
-                                          CircularProgressIndicator()))
+                                padding: EdgeInsets.all(16),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
                             else if (_page < _lastPage)
                               Center(
                                 child: TextButton(
@@ -281,7 +332,10 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
       body: NativeNavigationBar(
         leading: canPop
             ? NativeBarButton(
-                icon: const NativeIcon.symbol('chevron.left', fallback: Icons.arrow_back),
+                icon: const NativeIcon.symbol(
+                  'chevron.left',
+                  fallback: Icons.arrow_back,
+                ),
                 title: 'Back',
                 onPressed: () => Navigator.of(context).pop(),
               )
@@ -290,7 +344,10 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
           title: 'Customer Issues',
           subtitle: '${_issues.length} tickets',
           capsule: true,
-          icon: const NativeIcon.symbol('exclamationmark.bubble', fallback: Icons.report_problem_outlined),
+          icon: const NativeIcon.symbol(
+            'exclamationmark.bubble',
+            fallback: Icons.report_problem_outlined,
+          ),
         ),
         trailing: [
           NativeBarButton(
@@ -301,7 +358,10 @@ class _CustomerIssuesScreenState extends State<CustomerIssuesScreen> {
             onPressed: () => _showCreate(context),
           ),
           NativeBarButton(
-            icon: const NativeIcon.symbol('arrow.clockwise', fallback: Icons.refresh),
+            icon: const NativeIcon.symbol(
+              'arrow.clockwise',
+              fallback: Icons.refresh,
+            ),
             title: 'Refresh',
             group: 0,
             onPressed: _load,
@@ -344,32 +404,39 @@ class _ReportIssueForm extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
         child: Padding(
-          padding:
-              EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
           child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Report an issue',
-                style: AppTypography.sectionTitle.copyWith(color: cs.onSurface),
-              ),
-              const SizedBox(height: 16),
-              LeadGlass.field(
-                context,
-                DropdownButtonFormField<int>(
-                  initialValue: s._selectedCustomer,
-                  isExpanded: true,
-                  decoration:
-                      LeadGlass.fieldDecoration(context, label: 'Customer *'),
-                  // Each row shows *its own* customer's name.
-                  items: s._customerIds
-                      .map((id) => DropdownMenuItem(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Report an issue',
+                  style: AppTypography.sectionTitle.copyWith(
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                LeadGlass.field(
+                  context,
+                  DropdownButtonFormField<int>(
+                    initialValue: s._selectedCustomer,
+                    isExpanded: true,
+                    decoration: LeadGlass.fieldDecoration(
+                      context,
+                      label: 'Customer *',
+                    ),
+                    // Each row shows *its own* customer's name.
+                    items: s._customerIds
+                        .map(
+                          (id) => DropdownMenuItem(
                             value: id,
                             child: Text(
                               s._customerNames[id]?.isNotEmpty == true
@@ -377,47 +444,52 @@ class _ReportIssueForm extends StatelessWidget {
                                   : 'Customer $id',
                               overflow: TextOverflow.ellipsis,
                             ),
-                          ))
-                      .toList(),
-                  onChanged: (id) => s.selectCustomer(id),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (id) => s.selectCustomer(id),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              LeadGlass.field(
-                context,
-                TextFormField(
-                  controller: s._titleCtrl,
-                  decoration:
-                      LeadGlass.fieldDecoration(context, label: 'Issue title *'),
-                  maxLength: 255,
+                const SizedBox(height: 12),
+                LeadGlass.field(
+                  context,
+                  TextFormField(
+                    controller: s._titleCtrl,
+                    decoration: LeadGlass.fieldDecoration(
+                      context,
+                      label: 'Issue title *',
+                    ),
+                    maxLength: 255,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              LeadGlass.field(
-                context,
-                TextFormField(
-                  controller: s._descCtrl,
-                  decoration:
-                      LeadGlass.fieldDecoration(context, label: 'Description *'),
-                  maxLength: 5000,
-                  maxLines: 4,
+                const SizedBox(height: 12),
+                LeadGlass.field(
+                  context,
+                  TextFormField(
+                    controller: s._descCtrl,
+                    decoration: LeadGlass.fieldDecoration(
+                      context,
+                      label: 'Description *',
+                    ),
+                    maxLength: 5000,
+                    maxLines: 4,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              AppPrimaryButton(
-                onPressed: s._busy ? null : s._create,
-                label: 'Report issue',
-                loading: s._busy,
-                height: 50,
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 20),
+                AppPrimaryButton(
+                  onPressed: s._busy ? null : s._create,
+                  label: 'Report issue',
+                  loading: s._busy,
+                  height: 50,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 class _IssueCard extends StatelessWidget {
@@ -437,14 +509,18 @@ class _IssueCard extends StatelessWidget {
         if (!fixed)
           NativeMenuItem(
             title: 'Mark as Resolved',
-            icon: const NativeIcon.symbol('checkmark.circle', fallback: Icons.check_circle_outline),
+            icon: const NativeIcon.symbol(
+              'checkmark.circle',
+              fallback: Icons.check_circle_outline,
+            ),
             onSelected: onMarkFixed,
           ),
         NativeMenuItem(
           title: 'Copy Issue Details',
           icon: const NativeIcon.symbol('doc.on.doc', fallback: Icons.copy),
           onSelected: () {
-            final text = '${issue.issueTitle} - ${issue.customerName ?? 'Customer'}';
+            final text =
+                '${issue.issueTitle} - ${issue.customerName ?? 'Customer'}';
             Clipboard.setData(ClipboardData(text: text));
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Copied "$text" to clipboard')),
@@ -499,12 +575,19 @@ class _IssueCard extends StatelessWidget {
             if (!fixed) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF0FDF4),
+                  color: isDark
+                      ? const Color(0xFF1E293B)
+                      : const Color(0xFFF0FDF4),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFBBF7D0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFBBF7D0),
                     width: 1,
                   ),
                 ),
@@ -513,7 +596,9 @@ class _IssueCard extends StatelessWidget {
                     Icon(
                       Icons.check_circle_outline_rounded,
                       size: 18,
-                      color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534),
+                      color: isDark
+                          ? const Color(0xFF4ADE80)
+                          : const Color(0xFF166534),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -523,18 +608,25 @@ class _IssueCard extends StatelessWidget {
                           fontFamily: AppTypography.fontFamily,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF166534),
+                          color: isDark
+                              ? const Color(0xFF4ADE80)
+                              : const Color(0xFF166534),
                         ),
                       ),
                     ),
                     Material(
-                      color: isDark ? const Color(0xFF22C55E) : const Color(0xFF16A34A),
+                      color: isDark
+                          ? const Color(0xFF22C55E)
+                          : const Color(0xFF16A34A),
                       borderRadius: BorderRadius.circular(8),
                       child: InkWell(
                         onTap: onMarkFixed,
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
                           alignment: Alignment.center,
                           child: const Text(
                             'Resolve',
@@ -553,6 +645,132 @@ class _IssueCard extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IssueSummaryCard extends StatelessWidget {
+  const _IssueSummaryCard({
+    required this.title,
+    required this.count,
+    required this.subtitle,
+    required this.accentColor,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final String subtitle;
+  final Color accentColor;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
+
+    final bg = isDark ? const Color(0xFF1E1E24) : Colors.white;
+    final border = isSelected
+        ? Border.all(
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
+            width: 1.5,
+          )
+        : Border.all(
+            color: isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0),
+            width: 1,
+          );
+
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(12),
+              border: border,
+              boxShadow: isDark
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: accentColor,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFFCBD5E1)
+                              : const Color(0xFF475569),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w400,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

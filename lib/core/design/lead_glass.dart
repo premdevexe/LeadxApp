@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_typography.dart';
@@ -89,53 +90,75 @@ class LeadGlass {
     );
   }
 
-  /// A solid filter/segment bar: a plain pill track with a filled
-  /// selection, one step per label.
+  /// A solid filter/segment bar: a sleek segmented track with a filled
+  /// selection indicator that smoothly spans the entire active slot.
   static Widget segmentBar(
     BuildContext context,
     List<String> labels,
     int selected,
     ValueChanged<int> onSelected, {
-    double height = 38,
+    double height = 40,
   }) {
     final cs = Theme.of(context).colorScheme;
-    final active = cs.brightness == Brightness.dark
-        ? AppColors.brandDark
-        : cs.primary;
+    final isDark = cs.brightness == Brightness.dark;
+
+    final activeBg = isDark ? Colors.white : const Color(0xFF0F172A);
+    final activeFg = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final inactiveFg =
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final trackBg =
+        isDark ? const Color(0xFF1E1E24) : const Color(0xFFF1F5F9);
+    final borderColor =
+        isDark ? const Color(0xFF2E2E34) : const Color(0xFFE2E8F0);
+
     return Container(
       height: height,
+      padding: const EdgeInsets.all(3.5),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(height / 2),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+        color: trackBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor, width: 1),
       ),
       child: Row(
         children: [
           for (var i = 0; i < labels.length; i++)
             Expanded(
               child: GestureDetector(
-                onTap: () => onSelected(i),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onSelected(i);
+                },
                 behavior: HitTestBehavior.opaque,
-                child: Center(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(
-                        horizontal: 3, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: i == selected ? active : Colors.transparent,
-                      borderRadius: BorderRadius.circular(height / 2 - 6),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  height: double.infinity,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: i == selected ? activeBg : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                    boxShadow: (i == selected && !isDark)
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.10),
+                              blurRadius: 3,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    labels[i],
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontFamily,
+                      fontSize: 12.5,
+                      fontWeight:
+                          i == selected ? FontWeight.w600 : FontWeight.w500,
+                      color: i == selected ? activeFg : inactiveFg,
                     ),
-                    child: Text(
-                      labels[i],
-                      style: AppTypography.caption.copyWith(
-                        fontSize: 11.5,
-                        fontWeight:
-                            i == selected ? FontWeight.w700 : FontWeight.w500,
-                        color:
-                            i == selected ? cs.onPrimary : cs.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
