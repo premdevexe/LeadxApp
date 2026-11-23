@@ -42,49 +42,71 @@ class PushService {
       FlutterLocalNotificationsPlugin();
   int _nextId = 0;
   String? _lastRegisteredToken;
+  bool _initialized = false;
 
   /// Fired on any notification tap (foreground-open, background-open, or
   /// terminated-start) with the backend's navigation `data`.
   void Function(Map<String, dynamic>)? onNotificationTapped;
 
-  /// Call once on app start, after `Firebase.initializeApp`.
+  /// Idempotent. `main()` (via `bootstrapPush`) and `AuthController.login()`
+  /// both call this; the one-time wiring below is guarded so the static FCM
+  /// listeners (`onMessage`, `onMessageOpenedApp`, `onTokenRefresh`) are never
+  /// attached twice — a second attach would deliver every push to
+  /// [_showForeground] twice and re-fire token refresh.
+  ///
+  /// Call after `Firebase.initializeApp`.
   Future<void> initialize() async {
-    await _configureLocalNotifications();
-    await requestPermission();
+    if (!_initialized) {
+      _initialized = true;
 
-    // Terminated-app launch: the OS tray notification that started the app
-    // carries its FCM data here.
-    final initial = await _fcm.getInitialMessage();
-    if (initial != null) {
-      onNotificationTapped?.call(initial.data);
+      await _configureLocalNotifications();
+      await requestPermission();
+
+      // Terminated-app launch: the OS tray notification that started the app
+      // carries its FCM data here.
+      final initial = await _fcm.getInitialMessage();
+      if (initial != null) {
+        onNotificationTapped?.call(initial.data);
+      }
+
+      // Foreground: show local notification so user sees it in system tray/heads-up
+      FirebaseMessaging.onMessage.listen(_showForeground);
+
+      // Background: the OS shows the notification; tapping it brings the app to
+      // the foreground and fires this.
+      FirebaseMessaging.onMessageOpenedApp.listen((msg) {
+        onNotificationTapped?.call(msg.data);
+      });
+
+      // Subscribe to standard push topics so broadcast alerts reach this device
+      try {
+        await _fcm.subscribeToTopic('hello');
+        await _fcm.subscribeToTopic('all');
+        await _fcm.subscribeToTopic('general');
+      } catch (e) {
+        if (kDebugMode) debugPrint('Topic subscription failed: $e');
+      }
+
+      // FCM rotates tokens; re-register the new one, telling the server the old
+      // value it replaces.
+      _fcm.onTokenRefresh.listen((newToken) async {
+        final oldToken = _lastRegisteredToken;
+        if (oldToken != null && oldToken.isNotEmpty && oldToken != newToken) {
+          try {
+            await api.refreshDeviceToken(oldToken, newToken);
+            _lastRegisteredToken = newToken;
+          } on Object catch (e) {
+            if (kDebugMode) debugPrint('FCM token refresh failed: $e');
+          }
+        } else {
+          await registerToken();
+        }
+      });
     }
 
-    // Foreground: show local notification so user sees it in system tray/heads-up
-    FirebaseMessaging.onMessage.listen(_showForeground);
-
-    // Background: the OS shows the notification; tapping it brings the app to
-    // the foreground and fires this.
-    FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      onNotificationTapped?.call(msg.data);
-    });
-
-    // FCM rotates tokens; re-register the new one, telling the server the old
-    // value it replaces.
-    _fcm.onTokenRefresh.listen((newToken) async {
-      final oldToken = _lastRegisteredToken;
-      if (oldToken != null && oldToken.isNotEmpty && oldToken != newToken) {
-        try {
-          await api.refreshDeviceToken(oldToken, newToken);
-          _lastRegisteredToken = newToken;
-        } on Object catch (e) {
-          if (kDebugMode) debugPrint('FCM token refresh failed: $e');
-        }
-      } else {
-        await registerToken();
-      }
-    });
-
-    // Try registering token on initialization
+    // Register on every call: the post-login invocation is the one that binds
+    // the token to the freshly-authenticated employee, so it must run even
+    // after the one-time wiring above. Idempotent upsert server-side.
     await registerToken();
   }
 
@@ -114,13 +136,17 @@ class PushService {
         AppConstants.fcmChannelId,
         'General',
         description: 'Order, payment and follow-up updates.',
-        importance: Importance.defaultImportance,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
       );
       const high = AndroidNotificationChannel(
         AppConstants.fcmHighPriorityChannelId,
         'High priority',
         description: 'Approval decisions and payment verifications.',
-        importance: Importance.high,
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
       );
 
       await android.createNotificationChannel(general);
@@ -217,8 +243,10 @@ class PushService {
           channelDescription: isHigh
               ? 'Approval decisions and payment verifications.'
               : 'Order, payment and follow-up updates.',
-          importance: isHigh ? Importance.high : Importance.defaultImportance,
-          priority: isHigh ? Priority.high : Priority.defaultPriority,
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
           icon: '@mipmap/ic_launcher',
         ),
         iOS: const DarwinNotificationDetails(
