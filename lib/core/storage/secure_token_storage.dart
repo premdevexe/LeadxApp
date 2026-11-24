@@ -12,21 +12,41 @@ class SecureTokenStorage {
     ),
   );
 
-  static Future<String?> readToken() => _storage.read(key: _tokenKey);
+  /// In-process mirrors of the two platform-store values. Every mutation in
+  /// the app goes through this class, and the store is never written by
+  /// another process, so after the first (cold-start) read both values
+  /// resolve in memory — no platform-channel round-trip on every API
+  /// request, which is how often [readToken] is actually called.
+  static String? _tokenCache;
+  static bool? _sessionCache;
 
-  static Future<void> writeToken(String token) =>
-      _storage.write(key: _tokenKey, value: token);
-
-  static Future<bool> get sessionActive async {
-    final v = await _storage.read(key: _loggedInKey);
-    return v == '1';
+  static Future<String?> readToken() async {
+    if (_tokenCache != null) return _tokenCache;
+    _tokenCache = await _storage.read(key: _tokenKey);
+    return _tokenCache;
   }
 
-  static Future<void> setSessionActive(bool active) =>
-      _storage.write(key: _loggedInKey, value: active ? '1' : '0');
+  static Future<void> writeToken(String token) async {
+    await _storage.write(key: _tokenKey, value: token);
+    _tokenCache = token;
+  }
+
+  static Future<bool> get sessionActive async {
+    if (_sessionCache != null) return _sessionCache!;
+    final v = await _storage.read(key: _loggedInKey);
+    _sessionCache = v == '1';
+    return _sessionCache!;
+  }
+
+  static Future<void> setSessionActive(bool active) async {
+    await _storage.write(key: _loggedInKey, value: active ? '1' : '0');
+    _sessionCache = active;
+  }
 
   static Future<void> clear() async {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _loggedInKey);
+    _tokenCache = null;
+    _sessionCache = null;
   }
 }

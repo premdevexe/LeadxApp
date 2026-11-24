@@ -18,6 +18,12 @@ class AuthController extends ChangeNotifier {
   bool _sessionActive = false;
   bool _bootstrapping = false;
 
+  /// The single in-flight restore for this process. Memoizing the *future* (not
+  /// just the result) means every caller — the fire-and-forget start in
+  /// `main()` and the splash screen — awaits the same `GET /me` request
+  /// instead of each firing its own.
+  Future<bool>? _restoreFuture;
+
   AppServices get services => _services;
   MeResponse? get me => _me;
   bool get isAuthenticated => _sessionActive && _me != null;
@@ -37,7 +43,14 @@ class AuthController extends ChangeNotifier {
   bool get canEditFollowUps => _me?.canEditFollowUps() ?? false;
 
   /// Restores a persisted session on cold start.
-  Future<bool> restore() async {
+  ///
+  /// Memoized to a single in-flight [Future] so that both `main()` (fire-and-
+  /// forget) and the splash screen share one `GET /me` request instead of
+  /// each firing its own. The splash still receives the result to decide
+  /// whether the user lands in the shell or the login screen.
+  Future<bool> restore() => _restoreFuture ??= _restoreSession();
+
+  Future<bool> _restoreSession() async {
     _bootstrapping = true;
     notifyListeners();
 
@@ -56,6 +69,7 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
       _services.startSession(_me!.data.id);
       _services.push.registerToken();
+      _services.push.subscribeEmployee(_me!.data.id);
       return true;
     } on Object {
       // Token stale/revoked — clear and require login.
@@ -101,6 +115,7 @@ class AuthController extends ChangeNotifier {
 
       try {
         await _services.push.initialize();
+        await _services.push.subscribeEmployee(_me!.data.id);
       } catch (e) {
         if (kDebugMode) debugPrint('Push init skipped or failed: $e');
       }
@@ -118,21 +133,30 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final empId = _me?.data.id;
     try {
       await _client.post(ApiPaths.logout);
     } on Object {
       // Even if the server call fails, clear locally.
+    }
+    if (empId != null) {
+      await _services.push.unsubscribeEmployee(empId);
     }
     await _services.push.unregister();
     _services.stopSession();
     await SecureTokenStorage.clear();
     _me = null;
     _sessionActive = false;
+    _restoreFuture = null;
     notifyListeners();
   }
 
   /// Force a full re-login (called from the 401 callback on the API client).
   void invalidate() {
+    final empId = _me?.data.id;
+    if (empId != null) {
+      _services.push.unsubscribeEmployee(empId);
+    }
     _me = null;
     _sessionActive = false;
     notifyListeners();

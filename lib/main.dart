@@ -11,6 +11,8 @@ import 'core/services/app_config_service.dart';
 import 'core/services/app_services.dart';
 import 'core/services/biometric_service.dart';
 import 'core/services/connectivity_service.dart';
+import 'core/update/app_update_controller.dart';
+import 'core/update/update_dialog.dart';
 import 'features/auth/app_gate.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/follow_ups/follow_up_detail_screen.dart';
@@ -30,6 +32,26 @@ void _handleNotificationNavigation(Map<String, dynamic> data) {
   if (navState == null) return;
 
   final type = data['type']?.toString();
+  if (type == 'app_update') {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final navContext = appNavigatorKey.currentContext;
+      if (navContext != null) {
+        final controller = navContext.read<AppUpdateController>();
+        final res = controller.result;
+        if (res != null && res.isActionable) {
+          UpdateDialog.show(navContext, res);
+        } else {
+          controller.checkNow().then((latestRes) {
+            if (latestRes != null && latestRes.isActionable && navContext.mounted) {
+              UpdateDialog.show(navContext, latestRes);
+            }
+          });
+        }
+      }
+    });
+    return;
+  }
+
   final orderIdStr = data['order_id']?.toString();
   final paymentIdStr = data['payment_id']?.toString();
   final followUpIdStr = data['follow_up_id']?.toString();
@@ -109,12 +131,18 @@ Future<void> main() async {
   // 401 (revoked/expired token) anywhere in the app forces re-login.
   services.setUnauthorizedCallback(() => auth.invalidate());
 
-  // Restore any persisted session before the gate shows, so a returning
-  // user lands straight in the "signed in" state.
-  await auth.restore();
+  // Restore the persisted session in the background, not on the critical
+  // path. Awaiting `GET /me` before `runApp` would leave a blank screen for
+  // the whole round-trip; instead the splash paints immediately and the
+  // SplashScreen gates on `restore()` itself, so the token is settled before
+  // the shell shows.
+  auth.restore();
 
-  // Bootstrap push notifications (channels, permissions, token registration)
-  await services.bootstrapPush();
+  // Push setup (FCM channels, permissions, token registration) is likewise
+  // not needed to paint a frame. `registerToken` can run its retry/backoff
+  // for several seconds on a slow network, so it runs in the background and
+  // never holds up the splash.
+  services.bootstrapPush().catchError((Object _) {});
 
   // Centralized app configuration (admin currency). Load the offline cache
   // first so every figure formats correctly even before the network call,
@@ -128,6 +156,31 @@ Future<void> main() async {
   // Persisted light/dark/system appearance.
   final theme = await ThemeController.init();
 
+  // Setup app update controller with notification alert hook
+  final updateController = AppUpdateController(
+    onUpdateAvailable: (result) async {
+      final latest = result.latestVersion;
+      if (latest != null) {
+        final title = result.prompt.title.isNotEmpty
+            ? result.prompt.title
+            : 'Update Available: LeadX v${latest.versionName}';
+        final message = result.prompt.message.isNotEmpty
+            ? result.prompt.message
+            : 'LeadX version ${latest.versionName} is ready. Tap to download and install.';
+
+        await services.push.showUpdateNotification(
+          title: title,
+          body: message,
+          versionCode: latest.versionCode,
+          versionName: latest.versionName,
+        );
+      }
+    },
+  );
+
+  // Kicks off update check immediately on app start
+  updateController.start();
+
   runApp(
     MultiProvider(
       providers: [
@@ -136,6 +189,7 @@ Future<void> main() async {
         ChangeNotifierProvider<AppConfigService>.value(value: appConfig),
         ChangeNotifierProvider<ThemeController>.value(value: theme),
         ChangeNotifierProvider<ConnectivityService>(create: (_) => ConnectivityService()),
+        ChangeNotifierProvider<AppUpdateController>.value(value: updateController),
       ],
       child: const LeadxApp(),
     ),

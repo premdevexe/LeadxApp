@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/update/update_gate.dart';
 import '../dashboard/home_shell.dart';
 import '../splash/splash_screen.dart';
 import 'auth_controller.dart';
@@ -31,16 +32,18 @@ class _AppGateState extends State<AppGate> {
       );
     }
 
-    // Authenticated users always get the solid HomeShell (liquid-glass
-    // chrome is retired app-wide); the switcher still animates the
-    // splash → login → home transitions.
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
-      switchInCurve: Curves.easeIn,
-      switchOutCurve: Curves.easeOut,
-      child: auth.isAuthenticated
-          ? const HomeShell(key: ValueKey('home'))
-          : const LoginScreen(key: ValueKey('login')),
+    // Both authenticated users (HomeShell) and unauthenticated users
+    // (LoginScreen) are wrapped by UpdateGate so update checks run and prompt
+    // regardless of auth state.
+    return UpdateGate(
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 350),
+        switchInCurve: Curves.easeIn,
+        switchOutCurve: Curves.easeOut,
+        child: auth.isAuthenticated
+            ? const HomeShell(key: ValueKey('home'))
+            : const LoginScreen(key: ValueKey('login')),
+      ),
     );
   }
 }

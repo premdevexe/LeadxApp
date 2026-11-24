@@ -75,4 +75,6 @@ class AppConstants {
   static const String appName = 'LeadX';
   static const String fcmChannelId = 'leadx_general';
   static const String fcmHighPriorityChannelId = 'leadx_high_priority';
+  static const String updateChannelId = 'leadx_updates';
+  static const int updateNotificationId = 999119;
 }

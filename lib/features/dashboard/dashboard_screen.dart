@@ -154,7 +154,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Header total height = status bar inset + 56px bar.
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
+    // The whole strip — status-bar inset + 56px bar — must be opaque: the
+    // page scrolls underneath it, and any transparent zone shows the
+    // content through, smearing the top of the screen while scrolling.
     final header = Container(
+      color: isDark ? const Color(0xFF171717) : Colors.white,
       padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
       child: LeadxNavHeader(
         employeeName: employeeName,
@@ -306,7 +310,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           title: 'Verified revenue',
           value: Fmt.money(s.verifiedRevenue),
           subtitle: 'Cleared collections',
-          featured: true,
         ),
       if (_cardVisibility['customers_count'] ?? true)
         _MetricCard(
@@ -359,21 +362,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }
 
+    // Rows instead of a GridView so an odd trailing card (e.g. 9 cards in
+    // 2 columns) stretches full width on its last row instead of leaving a
+    // dead empty cell beside it. 120px card height and 12px gutters match
+    // the old grid metrics.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 600;
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: isWide ? 3 : 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            mainAxisExtent: 120,
-          ),
-          itemCount: cards.length,
-          itemBuilder: (_, i) => cards[i].build(context, isDark: isDark, cs: cs),
-        );
+        final columns = constraints.maxWidth >= 600 ? 3 : 2;
+        final rows = <Widget>[];
+        for (int start = 0; start < cards.length; start += columns) {
+          final end = start + columns < cards.length ? start + columns : cards.length;
+          rows.add(
+            Padding(
+              padding: EdgeInsets.only(top: start == 0 ? 0 : 12),
+              child: Row(
+                children: [
+                  for (int i = start; i < end; i++) ...[
+                    if (i > start) const SizedBox(width: 12),
+                    // Each row's cards fill the width; when the last row has
+                    // fewer than [columns] cards it simply spans the rest.
+                    Expanded(
+                      child: SizedBox(
+                        height: 120,
+                        child: cards[i].build(context, isDark: isDark, cs: cs),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+        return Column(children: rows);
       },
     );
   }
@@ -444,6 +464,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildFollowUpsAndExpiring(BuildContext context, m.Dashboard d, bool isDark) {
     final cs = Theme.of(context).colorScheme;
+    // Nothing pending in either list: two big dead "no data" cards read as
+    // a broken page, so they collapse into one compact, positive block.
+    if (d.recentFollowUps.isEmpty && d.expiringSubscriptions.isEmpty) {
+      return _AllCaughtUpCard(isDark: isDark);
+    }
     return Column(
       children: [
         Container(
@@ -573,6 +598,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+/// Shown instead of two dead "no data" cards when there are neither
+/// scheduled follow-ups nor expiring subscriptions: a single compact,
+/// positive confirmation — an invitation to act, not an empty mood.
+class _AllCaughtUpCard extends StatelessWidget {
+  const _AllCaughtUpCard({required this.isDark});
+
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final success = StatusPalette.success(cs);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: AppCard.decorationOf(context),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: success.withValues(alpha: isDark ? 0.22 : 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.check_rounded, size: 20, color: success),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "You're all caught up",
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : const Color(0xFF171717),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'No follow-ups scheduled and no subscriptions due for renewal.',
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Small building blocks ───────────────────────────────────────────────────
 
 class _MetricCard {
@@ -580,52 +663,33 @@ class _MetricCard {
     required this.title,
     required this.value,
     this.subtitle,
-    this.featured = false,
   });
 
   final String title;
   final String value;
   final String? subtitle;
-  final bool featured;
 
+  /// Uniform white card: the grid is deliberately flat (clean & minimal
+  /// direction), so no card gets a dark step or glow.
   Widget build(BuildContext context, {required bool isDark, required ColorScheme cs}) {
-    final bg = featured
-        ? (isDark ? const Color(0xFF111111) : const Color(0xFF171717))
-        : (isDark ? const Color(0xFF1E1E1E) : Colors.white);
-    final border = featured
-        ? const Color(0xFF171717)
-        : (isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5));
-
-    final titleColor = featured
-        ? Colors.white.withValues(alpha: 0.7)
-        : (isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373));
-    final valueColor = featured
-        ? Colors.white
-        : (isDark ? const Color(0xFFFAFAFA) : const Color(0xFF171717));
-    final subtitleColor = featured
-        ? Colors.white.withValues(alpha: 0.5)
-        : (isDark ? const Color(0xFF888888) : const Color(0xFFA3A3A3));
+    final bg = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final border = isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5);
+    final titleColor = isDark ? const Color(0xFFA3A3A3) : const Color(0xFF737373);
+    final valueColor = isDark ? const Color(0xFFFAFAFA) : const Color(0xFF171717);
+    final subtitleColor = isDark ? const Color(0xFF888888) : const Color(0xFFA3A3A3);
 
     return Container(
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppColors.radiusLg),
         border: Border.all(color: border, width: 1),
-        boxShadow: featured
-            ? const [
-                BoxShadow(
-                  color: Color(0x1F000000),
-                  blurRadius: 4,
-                  offset: Offset(0, 2),
-                ),
-              ]
-            : const [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 2,
-                  offset: Offset(0, 1),
-                ),
-              ],
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -964,10 +1028,12 @@ class _CollectedVsDueCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              // Neutral chip: the accent is reserved for the number and the
+              // progress fill below (one place for the color).
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: StatusPalette.success(cs).withValues(alpha: isDark ? 0.22 : 0.12),
+                  color: isDark ? const Color(0xFF262626) : const Color(0xFFF5F5F5),
                   borderRadius: BorderRadius.circular(AppColors.radiusSm),
                 ),
                 child: Row(
@@ -976,7 +1042,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                     Icon(
                       Icons.payments_rounded,
                       size: 13,
-                      color: StatusPalette.success(cs),
+                      color: cs.onSurfaceVariant,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -984,7 +1050,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                       style: AppTypography.caption.copyWith(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: StatusPalette.success(cs),
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -1030,7 +1096,9 @@ class _CollectedVsDueCard extends StatelessWidget {
                       style: AppTypography.statNumeric.copyWith(
                         fontSize: 24,
                         fontWeight: FontWeight.w700,
-                        color: StatusPalette.success(cs),
+                        // The single accent on the page: the one number that
+                        // matters most, in the web secondary accent.
+                        color: AppColors.emeraldAccent,
                         letterSpacing: -0.4,
                       ),
                     ),
@@ -1055,7 +1123,7 @@ class _CollectedVsDueCard extends StatelessWidget {
                       style: AppTypography.statNumericSmall.copyWith(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: due > 0 ? StatusPalette.warning(cs) : cs.onSurface,
+                        color: cs.onSurface,
                         letterSpacing: -0.4,
                       ),
                     ),
@@ -1070,9 +1138,9 @@ class _CollectedVsDueCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: ratio,
               minHeight: 6,
-              backgroundColor: StatusPalette.warning(cs).withValues(alpha: 0.2),
+              backgroundColor: cs.outlineVariant.withValues(alpha: isDark ? 0.25 : 0.35),
               valueColor:
-                  AlwaysStoppedAnimation<Color>(StatusPalette.success(cs)),
+                  const AlwaysStoppedAnimation<Color>(AppColors.emeraldAccent),
             ),
           ),
           const SizedBox(height: 8),
@@ -1120,7 +1188,11 @@ class _Chart extends StatelessWidget {
             .clamp(1, 99999);
 
     final barBase = isDark ? const Color(0xFF333333) : const Color(0xFFE5E5E5);
-    final barAccent = isDark ? AppColors.brandDark : AppColors.brand;
+    // The page's single accent: the current-month bar (and its footer
+    // figures) share the indigo used on the hero card — one place for
+    // color, everything else neutral.
+    final barAccent =
+        isDark ? const Color(0xFFA5B4FC) : AppColors.emeraldAccent;
 
     // No inner card: the section already sits in an AppCard, so the chart
     // draws directly on the card surface (card-in-card read as heavy).

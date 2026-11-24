@@ -29,6 +29,11 @@ class BiometricService {
   bool _isAuthenticating = false;
   DateTime? _lastAuthSuccessTime;
 
+  /// Whether the lock overlay is currently covering the shell. Owned by
+  /// `HomeShell`; anything that floats app-wide (the update sheet, for one)
+  /// must stay behind it.
+  bool isAppLocked = false;
+
   bool get isBiometricEnabled => _isBiometricEnabled;
   bool get lockOnResume => _lockOnResume;
   bool get isAuthenticating => _isAuthenticating;

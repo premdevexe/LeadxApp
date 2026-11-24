@@ -19,6 +19,43 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       'FCM background message received: ${message.messageId} - ${message.notification?.title}',
     );
   }
+
+  // If this is a data-only payload arriving in the background, Android does not
+  // display it in the system tray automatically. Post a local notification.
+  if (message.notification == null && message.data.isNotEmpty) {
+    final title = message.data['title']?.toString() ??
+        message.data['header']?.toString();
+    final body = message.data['body']?.toString() ??
+        message.data['message']?.toString();
+    if (title != null && title.isNotEmpty) {
+      try {
+        final local = FlutterLocalNotificationsPlugin();
+        const androidSettings =
+            AndroidInitializationSettings('@mipmap/ic_launcher');
+        await local.initialize(
+          settings: const InitializationSettings(android: androidSettings),
+        );
+        await local.show(
+          id: message.hashCode,
+          title: title,
+          body: body ?? '',
+          payload: jsonEncode(message.data),
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              AppConstants.fcmChannelId,
+              'General',
+              channelDescription: 'Order, payment and follow-up updates.',
+              importance: Importance.max,
+              priority: Priority.high,
+              playSound: true,
+              enableVibration: true,
+              icon: '@mipmap/ic_launcher',
+            ),
+          ),
+        );
+      } catch (_) {}
+    }
+  }
 }
 
 /// Firebase Cloud Messaging for the employee app.
@@ -67,6 +104,16 @@ class PushService {
       final initial = await _fcm.getInitialMessage();
       if (initial != null) {
         onNotificationTapped?.call(initial.data);
+      }
+
+      // Check if launched by a local notification (e.g. app update notification tap)
+      final launchDetails = await _local.getNotificationAppLaunchDetails();
+      if (launchDetails != null && launchDetails.didNotificationLaunchApp) {
+        final payload = launchDetails.notificationResponse?.payload;
+        final data = _decodePayload(payload);
+        if (data != null) {
+          onNotificationTapped?.call(data);
+        }
       }
 
       // Foreground: show local notification so user sees it in system tray/heads-up
@@ -148,33 +195,36 @@ class PushService {
         playSound: true,
         enableVibration: true,
       );
+      const updates = AndroidNotificationChannel(
+        AppConstants.updateChannelId,
+        'App Updates',
+        description: 'New app updates and mandatory patch alerts.',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      );
 
       await android.createNotificationChannel(general);
       await android.createNotificationChannel(high);
+      await android.createNotificationChannel(updates);
     }
   }
 
   Future<void> requestPermission() async {
     try {
-      final settings = await _fcm.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
-
-      // On Android 13+ (API 33+), request notification runtime permission explicitly
       if (!kIsWeb && Platform.isAndroid) {
         final android = _local.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
         if (android != null) {
           await android.requestNotificationsPermission();
         }
-      }
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-          settings.authorizationStatus == AuthorizationStatus.provisional) {
-        await registerToken();
+      } else {
+        await _fcm.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
       }
     } catch (e) {
       if (kDebugMode) debugPrint('Notification permission request error: $e');
@@ -184,26 +234,53 @@ class PushService {
   Future<String?> getToken() => _fcm.getToken();
 
   /// Register the current token with the backend for this employee.
-  Future<void> registerToken() async {
-    try {
-      final token = await _fcm.getToken();
-      if (token == null || token.isEmpty) return;
+  Future<void> registerToken({int retries = 2}) async {
+    for (var attempt = 0; attempt <= retries; attempt++) {
+      try {
+        final token = await _fcm.getToken();
+        if (token == null || token.isEmpty) return;
 
-      final platform = (!kIsWeb && Platform.isIOS) ? 'ios' : 'android';
-      final devName = await _deviceName();
+        final platform = (!kIsWeb && Platform.isIOS) ? 'ios' : 'android';
+        final devName = await _deviceName();
 
-      await api.registerDevice(
-        token,
-        platform: platform,
-        deviceName: devName,
-      );
-      _lastRegisteredToken = token;
-      if (kDebugMode) {
-        debugPrint('FCM device registered: $token ($platform)');
+        await api.registerDevice(
+          token,
+          platform: platform,
+          deviceName: devName,
+        );
+        _lastRegisteredToken = token;
+        if (kDebugMode) {
+          debugPrint('FCM device registered: $token ($platform)');
+        }
+        return;
+      } on Object catch (e) {
+        if (kDebugMode) {
+          debugPrint('FCM register attempt $attempt failed: $e');
+        }
+        if (attempt < retries) {
+          await Future.delayed(Duration(seconds: 2 * (attempt + 1)));
+        }
       }
-    } on Object catch (e) {
-      // Not logged in / no network — the next login or token refresh retries.
-      if (kDebugMode) debugPrint('FCM register failed (offline or unauthenticated): $e');
+    }
+  }
+
+  /// Subscribe the device to the employee's personal FCM topic.
+  Future<void> subscribeEmployee(int employeeId) async {
+    try {
+      await _fcm.subscribeToTopic('user_$employeeId');
+      if (kDebugMode) debugPrint('Subscribed to FCM topic: user_$employeeId');
+    } catch (e) {
+      if (kDebugMode) debugPrint('Failed to subscribe to user_$employeeId topic: $e');
+    }
+  }
+
+  /// Unsubscribe from the employee's personal FCM topic.
+  Future<void> unsubscribeEmployee(int employeeId) async {
+    try {
+      await _fcm.unsubscribeFromTopic('user_$employeeId');
+      if (kDebugMode) debugPrint('Unsubscribed from FCM topic: user_$employeeId');
+    } catch (e) {
+      if (kDebugMode) debugPrint('Failed to unsubscribe from user_$employeeId topic: $e');
     }
   }
 
@@ -256,6 +333,51 @@ class PushService {
         ),
       ),
     );
+  }
+
+  /// Displays a local notification in the notification shade informing the user that an update is available.
+  Future<void> showUpdateNotification({
+    required String title,
+    required String body,
+    required int versionCode,
+    required String versionName,
+  }) async {
+    try {
+      await _local.show(
+        id: AppConstants.updateNotificationId,
+        title: title,
+        body: body,
+        payload: jsonEncode({
+          'type': 'app_update',
+          'version_code': versionCode,
+          'version_name': versionName,
+        }),
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            AppConstants.updateChannelId,
+            'App Updates',
+            channelDescription: 'New app updates and mandatory patch alerts.',
+            importance: Importance.max,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            icon: '@mipmap/ic_launcher',
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
+      );
+      if (kDebugMode) {
+        debugPrint('[PushService] Posted update notification: $title - $body');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[PushService] Failed to show update notification: $e');
+      }
+    }
   }
 
   /// Tap on a local (foreground) notification.

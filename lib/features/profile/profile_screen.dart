@@ -10,6 +10,9 @@ import '../../core/errors/api_exception.dart';
 import '../../core/services/app_config_service.dart';
 import '../../core/services/app_services.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/update/app_update_controller.dart';
+import '../../core/update/app_update_service.dart';
+import '../../core/update/update_dialog.dart';
 import '../../core/utils/native_banner_helper.dart';
 import '../../core/utils/native_feedback.dart';
 import '../../shared/widgets/app_widgets.dart';
@@ -47,11 +50,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _biometricEnabled = false;
   bool _lockOnResume = false;
 
+  /// Installed version string for the About row (`2.0.8`), read once.
+  String _installedVersion = '';
+  bool _checkingUpdate = false;
+
   @override
   void initState() {
     super.initState();
     _seed();
     _loadBiometricSettings();
+    _loadInstalledVersion();
+  }
+
+  Future<void> _loadInstalledVersion() async {
+    final info = await AppUpdateService.instance.packageInfo();
+    if (!mounted || info == null) return;
+    setState(() {
+      _installedVersion = info.buildNumber.trim().isEmpty
+          ? info.version
+          : '${info.version} (${info.buildNumber})';
+    });
+  }
+
+  /// Manual update check from the About card. Reports "up to date" inline and
+  /// hands off to the same sheet the startup check uses.
+  Future<void> _checkForUpdates() async {
+    if (_checkingUpdate) return;
+    NativeFeedback.light();
+    setState(() => _checkingUpdate = true);
+
+    final controller = context.read<AppUpdateController>();
+    final result = await controller.checkNow();
+
+    if (!mounted) return;
+    setState(() => _checkingUpdate = false);
+
+    if (result == null) {
+      showLeadxBanner(
+        context,
+        title: 'Update check failed',
+        body: 'Could not reach the update server. Check your connection and try again.',
+        icon: const NativeIcon.symbol('wifi.exclamationmark', fallback: Icons.wifi_off_rounded),
+      );
+      return;
+    }
+
+    if (result.isActionable) {
+      // A mandatory release can't be postponed — the gate will re-raise it,
+      // so this manual path always opens the sheet.
+      await UpdateDialog.show(context, result);
+      return;
+    }
+
+    showLeadxBanner(
+      context,
+      title: 'LeadX is up to date',
+      body: result.latestVersion == null
+          ? 'You have the latest version installed.'
+          : 'Version ${result.latestVersion!.versionName} is the latest release.',
+      icon: const NativeIcon.symbol('checkmark.seal.fill', fallback: Icons.verified_rounded),
+    );
   }
 
   Future<void> _loadBiometricSettings() async {
@@ -360,6 +418,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 16),
 
+            // ── About & Updates ───────────────────────────────────────
+            _buildAboutCard(
+              isDark: isDark,
+              cardBg: cardBg,
+              cardBorder: cardBorder,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+            ),
+            const SizedBox(height: 16),
+
             // ── Sign Out Danger Zone ──────────────────────────────────
             _buildSignOutDangerZone(isDark: isDark),
             const SizedBox(height: 20),
@@ -367,7 +435,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // ── Footer Note ───────────────────────────────────────────
             Center(
               child: Text(
-                'LeadX Employee App · ${AppConstants.appName}',
+                _installedVersion.isEmpty
+                    ? 'LeadX Employee App · ${AppConstants.appName}'
+                    : 'LeadX Employee App · ${AppConstants.appName} · v$_installedVersion',
                 style: TextStyle(
                   fontFamily: AppTypography.fontFamily,
                   fontSize: 11,
@@ -1724,6 +1794,163 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ── 6. About & Updates Section ──────────────────────────────────────
+  Widget _buildAboutCard({
+    required bool isDark,
+    required Color cardBg,
+    required Color cardBorder,
+    required Color textPrimary,
+    required Color textSecondary,
+  }) {
+    final tileBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
+    final tileBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    final controller = context.watch<AppUpdateController>();
+    final pending = controller.result;
+    final hasUpdate = pending?.isActionable ?? false;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ABOUT & UPDATES',
+            style: TextStyle(
+              fontFamily: AppTypography.fontFamily,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Installed version + manual check
+          InkWell(
+            onTap: _checkingUpdate ? null : _checkForUpdates,
+            borderRadius: BorderRadius.circular(10),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: tileBg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: tileBorder),
+                  ),
+                  child: Icon(
+                    Icons.system_update_rounded,
+                    size: 19,
+                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'App version',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: textPrimary,
+                        ),
+                      ),
+                      Text(
+                        _installedVersion.isEmpty
+                            ? 'Tap to check for updates'
+                            : '$_installedVersion · tap to check for updates',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontFamily,
+                          fontSize: 11,
+                          color: textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_checkingUpdate)
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(textSecondary),
+                    ),
+                  )
+                else if (hasUpdate)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withValues(alpha: isDark ? 0.18 : 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'AVAILABLE',
+                      style: TextStyle(
+                        fontFamily: AppTypography.fontFamily,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: textSecondary,
+                  ),
+              ],
+            ),
+          ),
+
+          if (pending != null && hasUpdate) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: FilledButton(
+                onPressed: () => UpdateDialog.show(context, pending),
+                style: FilledButton.styleFrom(
+                  backgroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                  'Update to ${pending.latestVersion?.versionName ?? 'latest'}',
+                  style: const TextStyle(
+                    fontFamily: AppTypography.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

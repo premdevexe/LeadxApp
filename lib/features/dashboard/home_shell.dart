@@ -47,7 +47,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (BiometricService.shared.isBiometricEnabled) {
-      _isLocked = true;
+      _setLocked(true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _triggerBiometricAuth();
       });
@@ -57,7 +57,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    BiometricService.shared.isAppLocked = false;
     super.dispose();
+  }
+
+  /// Single place that flips the lock overlay, mirrored onto
+  /// [BiometricService] so app-wide overlays (the update sheet) stay behind
+  /// the lock screen instead of floating over it.
+  void _setLocked(bool locked) {
+    if (_isLocked != locked) {
+      setState(() => _isLocked = locked);
+    }
+    BiometricService.shared.isAppLocked = locked;
   }
 
   @override
@@ -87,10 +98,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       _pausedAt = null;
 
       if (bio.isBiometricEnabled && bio.lockOnResume && wasBackgrounded) {
-        setState(() {
-          _isLocked = true;
-          _lockError = null;
-        });
+        setState(() => _lockError = null);
+        _setLocked(true);
         _triggerBiometricAuth();
       }
     }
@@ -110,13 +119,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _isAuthenticating = false;
-      if (result.success) {
-        _isLocked = false;
-        _lockError = null;
-      } else {
-        _lockError = result.errorMessage;
-      }
+      if (!result.success) _lockError = result.errorMessage;
     });
+    _setLocked(!result.success);
 
     if (result.success) {
       NativeFeedback.light();
@@ -731,6 +736,17 @@ class _AnimatedIndexedStackState extends State<AnimatedIndexedStack>
   late Animation<Offset> _slide;
   late int _currentIndex;
 
+  /// The slots of [AnimatedIndexedStack.children] that have been visible at
+  /// least once. Tabs build lazily — a tab's `initState` (and its initial
+  /// data load) runs on first visit, not at shell entry — and then it stays
+  /// in the stack for the rest of the session, so state and scroll position
+  /// survive switching just as [IndexedStack] gives.
+  late final Set<int> _visited = {widget.index};
+
+  /// Position of the selected tab inside the compacted [IndexedStack];
+  /// recomputed on every build.
+  int _slot = 0;
+
   @override
   void initState() {
     super.initState();
@@ -758,6 +774,7 @@ class _AnimatedIndexedStackState extends State<AnimatedIndexedStack>
     super.didUpdateWidget(oldWidget);
     if (widget.index != _currentIndex) {
       _currentIndex = widget.index;
+      _visited.add(widget.index);
       _controller.forward(from: 0.0);
     }
   }
@@ -770,13 +787,26 @@ class _AnimatedIndexedStackState extends State<AnimatedIndexedStack>
 
   @override
   Widget build(BuildContext context) {
+    // Only tabs the user has opened are in the stack. The currently selected
+    // tab is always one of them (the set is seeded with the initial index
+    // and extended in didUpdateWidget before the index is painted), so the
+    // stack always has a valid visible child; unvisited siblings simply
+    // haven't been constructed yet, which is what keeps their network loads
+    // off the shell-entry critical path.
+    final stack = <Widget>[];
+    for (var i = 0; i < widget.children.length; i++) {
+      if (!_visited.contains(i)) continue;
+      stack.add(widget.children[i]);
+      if (i == _currentIndex) _slot = stack.length - 1;
+    }
+
     return FadeTransition(
       opacity: _opacity,
       child: SlideTransition(
         position: _slide,
         child: IndexedStack(
-          index: _currentIndex,
-          children: widget.children,
+          index: _slot,
+          children: stack,
         ),
       ),
     );

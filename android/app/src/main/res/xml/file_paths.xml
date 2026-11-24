@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths the update flow may expose to Android's package installer.
+
+     The APK is downloaded into the app's private cache directory
+     (`getTemporaryDirectory()`), so `<cache-path>` is the one that matters.
+     The external variants are kept narrow and are only consulted if a future
+     download target moves out of private storage. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="update_apk" path="." />
+    <files-path name="internal_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+</paths>
