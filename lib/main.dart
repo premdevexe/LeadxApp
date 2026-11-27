@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/design/app_theme.dart';
 import 'core/design/theme_controller.dart';
@@ -23,9 +24,12 @@ import 'features/payments/payment_detail_screen.dart';
 import 'features/payments/payments_screen.dart';
 import 'firebase_options.dart';
 import 'shared/format.dart';
+import 'shared/widgets/app_snackbar.dart';
 import 'shared/widgets/offline_indicator.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> appScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
 void _handleNotificationNavigation(Map<String, dynamic> data) {
   final navState = appNavigatorKey.currentState;
@@ -156,11 +160,25 @@ Future<void> main() async {
   // Persisted light/dark/system appearance.
   final theme = await ThemeController.init();
 
-  // Setup app update controller with notification alert hook
+  // Setup app update controller with persistent notification alert hook
+  final prefs = await SharedPreferences.getInstance();
+  final lastNotifiedCode = prefs.getInt('last_notified_update_version_code');
+
   final updateController = AppUpdateController(
+    lastNotifiedVersionCode: lastNotifiedCode,
     onUpdateAvailable: (result) async {
       final latest = result.latestVersion;
       if (latest != null) {
+        final currentUserId = auth.me?.data.id;
+        final userKey = currentUserId != null
+            ? 'notified_update_${currentUserId}_${latest.versionCode}'
+            : 'notified_update_v${latest.versionCode}';
+
+        // Check if already notified for this version
+        if (prefs.getBool(userKey) == true) {
+          return;
+        }
+
         final title = result.prompt.title.isNotEmpty
             ? result.prompt.title
             : 'Update Available: LeadX v${latest.versionName}';
@@ -168,18 +186,27 @@ Future<void> main() async {
             ? result.prompt.message
             : 'LeadX version ${latest.versionName} is ready. Tap to download and install.';
 
-        await services.push.showUpdateNotification(
+        final sent = await services.push.showUpdateNotification(
           title: title,
           body: message,
           versionCode: latest.versionCode,
           versionName: latest.versionName,
+          userId: currentUserId,
         );
+
+        if (sent) {
+          await prefs.setBool(userKey, true);
+          await prefs.setInt('last_notified_update_version_code', latest.versionCode);
+        }
       }
     },
   );
 
   // Kicks off update check immediately on app start
   updateController.start();
+
+  // Attach global scaffold messenger key to AppSnackBar
+  AppSnackBar.messengerKey = appScaffoldMessengerKey;
 
   runApp(
     MultiProvider(
@@ -217,6 +244,7 @@ class LeadxApp extends StatelessWidget {
       value: overlayStyle,
       child: MaterialApp(
         navigatorKey: appNavigatorKey,
+        scaffoldMessengerKey: appScaffoldMessengerKey,
         title: 'LeadX Employee',
         debugShowCheckedModeBanner: false,
         themeMode: theme.mode,

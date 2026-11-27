@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../design/app_colors.dart';
+import '../../shared/widgets/app_snackbar.dart';
 import '../design/native_chrome.dart' show NativeIcon;
 
-/// Shows a quiet [SnackBar] banner.
+/// Shows a quiet [SnackBar] banner using [AppSnackBar].
 ///
-/// The iOS-26 native banner chrome is retired; every call site now gets a
-/// clean, solid [SnackBar] with the same title / subtitle / body content.
-/// The [icon] and [onTap] are accepted for call-site compatibility — the
-/// solid snackbar simply ignores them.
+/// Every call site gets a clean, solid floating [SnackBar] adhering to the Material UI specification.
 Future<void> showLeadxBanner(
   BuildContext context, {
   required String title,
@@ -17,29 +14,15 @@ Future<void> showLeadxBanner(
   NativeIcon? icon,
   VoidCallback? onTap,
 }) async {
-  final cs = Theme.of(context).colorScheme;
-  final isDark = cs.brightness == Brightness.dark;
-
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-          if (subtitle != null)
-            Text(subtitle, style: const TextStyle(fontSize: 12)),
-          if (body != null)
-            Text(body, style: const TextStyle(fontSize: 12)),
-        ],
-      ),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      backgroundColor:
-          isDark ? AppColors.surfaceElevatedDark : AppColors.surfaceElevatedLight,
-    ),
+
+  final message = subtitle ?? body ?? '';
+  AppSnackBar.show(
+    context,
+    title: title,
+    message: message,
+    type: AppSnackBarType.neutral,
+    onAction: onTap,
+    actionLabel: onTap != null ? 'View' : null,
   );
 }

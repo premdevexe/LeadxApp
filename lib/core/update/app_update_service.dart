@@ -47,6 +47,12 @@ class AppUpdateService {
     maxRedirects: 3,
   ));
 
+  /// The in-flight chunked slice requests. If the user cancels mid-download,
+  /// each of these tokens is cancelled so `Future.wait` inside
+  /// [_fetchChunked] unblocks immediately instead of waiting for a socket to
+  /// time out.
+  final Set<CancelToken> _liveTokens = <CancelToken>{};
+
   /// Cached platform metadata — reading it hits a method channel, and both
   /// version and package name are needed on every check.
   PackageInfo? _packageInfo;
@@ -119,11 +125,227 @@ class AppUpdateService {
 
   // ── Downloading ──────────────────────────────────────────────────────
 
+  /// How many parallel slices to use for a range-capable download.
+  ///
+  /// The portal sits on shared hosting, where a *single* connection gets
+  /// throttled to a trickle; several concurrent byte-ranges beat it. Slices
+  /// are ~8 MB, clamped to 2–8 in flight. Below ~4 MB a plain stream is
+  /// just as fast and wastes no connections.
+  static int _chunkCount(int sizeBytes) {
+    if (sizeBytes < (4 << 20)) return 1;
+    final slices = (sizeBytes ~/ (8 << 20)) + 1;
+    return slices.clamp(2, 8);
+  }
+
+  /// Asks the server for its size and Range support: a HEAD first (cheap),
+  /// then a single-byte ranged GET if the HEAD doesn't answer.
+  Future<_Probe> _probe(VersionDetails version) async {
+    try {
+      final head = await _dio.head(
+        version.downloadUrl,
+        options: Options(headers: {'User-Agent': _userAgent}),
+      );
+      final declared = int.tryParse(_headerValue(head, 'content-length') ?? '');
+      final total = (declared ?? 0) > 0 ? declared! : version.fileSizeBytes;
+      final acceptsRanges =
+          (_headerValue(head, 'accept-ranges') ?? '').toLowerCase();
+      return _Probe(total, acceptsRanges.contains('bytes') && total > 0);
+    } on DioException {
+      // HEAD not implemented (some CDNs 405 it) — one byte does double
+      // duty: a 206 proves Range works *and* reveals the total length in
+      // `Content-Range`. A 200 means Range was ignored.
+      final res = await _dio.get<dynamic>(
+        version.downloadUrl,
+        options: Options(
+          headers: {'User-Agent': _userAgent, 'Range': 'bytes=0-0'},
+          // Single byte; the body is discarded, we only read headers.
+          responseType: ResponseType.plain,
+        ),
+      );
+      if (res.statusCode == 206) {
+        final total =
+            int.tryParse((_headerValue(res, 'content-range') ?? '').split('/').last) ??
+                version.fileSizeBytes;
+        return _Probe(total, total > 0);
+      }
+      final total =
+          int.tryParse(_headerValue(res, 'content-length') ?? '') ?? version.fileSizeBytes;
+      return _Probe(total, false);
+    }
+  }
+
+  /// Streams the whole file in one connection (the original path) and
+  /// returns the byte count the server declared — the caller re-checks it
+  /// against the file on disk.
+  Future<int> _fetchStream(
+    VersionDetails version,
+    File partial,
+    CancelToken? cancelToken,
+    void Function(int, int)? onProgress,
+  ) async {
+    final res = await _dio.download(
+      version.downloadUrl,
+      partial.path,
+      cancelToken: cancelToken,
+      deleteOnError: true,
+      options: Options(
+        headers: {'User-Agent': _userAgent},
+        // The portal sends `Content-Type: application/vnd.android.package-archive`;
+        // Dio's default JSON transformer would otherwise try to decode it.
+        responseType: ResponseType.stream,
+        validateStatus: (s) => s != null && s >= 200 && s < 300,
+      ),
+      onReceiveProgress: onProgress,
+    );
+    final declared = int.tryParse(_headerValue(res, 'content-length') ?? '');
+    return (declared ?? 0) > 0 ? declared! : version.fileSizeBytes;
+  }
+
+  /// Downloads the file as several parallel byte-range slices.
+  ///
+  /// Each slice streams to its own sidecar file (`<part>.s0`, `.s1`, …) via
+  /// Dio's built-in downloader — one file per slice, so the concurrent
+  /// writers never contend on a single `RandomAccessFile` handle (Dart's
+  /// `FileMode` can't express read+write-without-truncate, which a shared
+  /// file would need). Once every slice lands, they are concatenated in
+  /// order into [partial] and the sidecars are removed.
+  ///
+  /// A slice whose connection drops re-requests its whole range (cheap —
+  /// a slice is only ~8 MB). If the server stops honouring `Range`
+  /// partway through, [_RangeNotHonored] is thrown and the caller recovers
+  /// with a single stream.
+  Future<void> _fetchChunked({
+    required VersionDetails version,
+    required int totalBytes,
+    required File partial,
+    CancelToken? cancelToken,
+    void Function(int, int)? onProgress,
+  }) async {
+    final n = _chunkCount(totalBytes);
+    final sliceSize = totalBytes ~/ n;
+
+    final sidecars = <File>[
+      for (var i = 0; i < n; i++) File('${partial.path}.s$i'),
+    ];
+    // Drop stale sidecars from a prior interrupted attempt.
+    for (final f in sidecars) {
+      if (await f.exists()) await _deleteQuietly(f);
+    }
+
+    // `dio.download` reports progress relative to the *slice*; convert it to
+    // global progress so 8 racing slices add up instead of each starting at 0.
+    final sliceReceived = List<int>.filled(n, 0);
+    final tracker = _ProgressTracker(totalBytes, onProgress);
+
+    var cancelled = false;
+    _liveTokens.clear();
+    if (cancelToken != null) {
+      cancelToken.whenCancel.then((_) {
+        cancelled = true;
+        // Wake every in-flight slice request so `Future.wait` unblocks.
+        for (final t in _liveTokens) {
+          t.cancel('cancelled');
+        }
+      });
+    }
+
+    Future<void> fetchSlice(int i) async {
+      final start = i * sliceSize;
+      final end = (i + 1 == n) ? totalBytes - 1 : (i + 1) * sliceSize - 1;
+      var retries = 0;
+      while (true) {
+        if (cancelled || (cancelToken?.isCancelled ?? false)) {
+          throw _DownloadCancelled();
+        }
+        final token = CancelToken();
+        _liveTokens.add(token);
+        try {
+          await _dio.download(
+            version.downloadUrl,
+            sidecars[i].path,
+            cancelToken: token,
+            deleteOnError: true,
+            options: Options(
+              headers: {
+                'User-Agent': _userAgent,
+                'Range': 'bytes=$start-$end',
+              },
+              responseType: ResponseType.stream,
+              // A 206 proves the range was honoured. A 200 means the server
+              // ignored the range — the single-stream fallback recovers it.
+              validateStatus: (s) => s == 206,
+            ),
+            onReceiveProgress: (received, total) {
+              final delta = received - sliceReceived[i];
+              sliceReceived[i] = received;
+              if (delta > 0) tracker.add(delta);
+            },
+          );
+          break; // this slice is complete
+        } on DioException catch (e) {
+          if (CancelToken.isCancel(e) || cancelled) {
+            throw _DownloadCancelled();
+          }
+          if (e.response?.statusCode == 200) {
+            throw _RangeNotHonored();
+          }
+          // Transient drop (timeout, disconnect, 5xx burst): the next loop
+          // re-requests the whole slice range. Hard limits: 3 retries, or
+          // any 4xx status (404/416 the range itself is wrong).
+          final status = e.response?.statusCode;
+          if (++retries > 3 ||
+              (status != null && status >= 400 && status < 500)) {
+            rethrow;
+          }
+        } finally {
+          _liveTokens.remove(token);
+        }
+      }
+    }
+
+    final futures = <Future<void>>[
+      for (var i = 0; i < n; i++) fetchSlice(i),
+    ];
+    try {
+      await Future.wait(futures);
+    } catch (e) {
+      // One slice failed (or the user cancelled): abort the rest so nothing
+      // outlives the error with stray requests or writers. The slice
+      // files are useless without a complete download, so drop them too.
+      for (final t in _liveTokens) {
+        t.cancel('aborted');
+      }
+      for (final f in sidecars) {
+        await _deleteQuietly(f);
+      }
+      rethrow;
+    }
+
+    // Every slice landed: stitch them into the staged file, in order.
+    final out = partial.openWrite();
+    try {
+      for (final f in sidecars) {
+        await out.addStream(f.openRead());
+      }
+    } finally {
+      await out.close();
+    }
+
+    for (final f in sidecars) {
+      await _deleteQuietly(f);
+    }
+  }
+
   /// Streams the APK into the app's cache directory, hashing as it goes.
   ///
   /// The file is written to a `.part` name and only renamed once the byte
   /// count and SHA-256 both match, so a cancelled or truncated download can
   /// never be handed to the Android packager.
+  ///
+  /// When the server supports byte ranges (the portal does) the file is
+  /// pulled in several parallel slices — shared-hosting per-connection
+  /// throttling is what makes a single 59 MB stream crawl, and slicing it
+  /// across connections recovers most of that.
   Future<UpdateDownloadResult> download({
     required VersionDetails version,
     CancelToken? cancelToken,
@@ -146,27 +368,38 @@ class AppUpdateService {
     }
 
     try {
-      // Drop any leftover partial from an interrupted download — `dio.download`
-      // would append to it otherwise.
+      // Drop any leftover partial from an interrupted download —
+      // `dio.download` / the chunked writer would otherwise append to it.
       if (await partial.exists()) await partial.delete();
 
-      final res = await _dio.download(
-        version.downloadUrl,
-        partial.path,
-        cancelToken: cancelToken,
-        deleteOnError: true,
-        options: Options(
-          headers: {'User-Agent': _userAgent},
-          // The portal sends `Content-Type: application/vnd.android.package-archive`;
-          // Dio's default JSON transformer would otherwise try to decode it.
-          responseType: ResponseType.stream,
-          validateStatus: (s) => s != null && s >= 200 && s < 300,
-        ),
-        onReceiveProgress: onProgress,
-      );
+      int expectedBytes;
+      final probe = await _probe(version);
+      // Only the chunked path when it is actually faster — a single slice
+      // just adds a pointless sidecar + copy round-trip.
+      if (probe.rangeOk && probe.total > 0 && _chunkCount(probe.total) > 1) {
+        try {
+          await _fetchChunked(
+            version: version,
+            totalBytes: probe.total,
+            partial: partial,
+            cancelToken: cancelToken,
+            onProgress: onProgress,
+          );
+          expectedBytes = probe.total;
+        } on _RangeNotHonored {
+          // The server stopped honouring ranges mid-download; the plain
+          // stream below is the safe recovery.
+          await _deleteQuietly(partial);
+          expectedBytes = await _fetchStream(
+            version, partial, cancelToken, onProgress,
+          );
+        }
+      } else {
+        expectedBytes = await _fetchStream(
+          version, partial, cancelToken, onProgress,
+        );
+      }
 
-      final declared = _headerValue(res, 'content-length');
-      final expectedBytes = int.tryParse(declared ?? '') ?? version.fileSizeBytes;
       final actualBytes = await partial.length();
 
       if (expectedBytes > 0 && actualBytes != expectedBytes) {
@@ -197,10 +430,16 @@ class AppUpdateService {
       await _pruneOtherApks(keep: target);
 
       return UpdateDownloadResult.success(installedApk);
+    } on _DownloadCancelled {
+      await _deleteQuietly(partial);
+      return UpdateDownloadResult.failure('Download cancelled.', cancelled: true);
     } catch (e) {
       await _deleteQuietly(partial);
       if (e is DioException) {
-        if (CancelToken.isCancel(e)) {
+        // A cancel arrives wrapped as a DioException; the stream path
+        // relies on it so "Cancel download" reports as cancelled, not as a
+        // server failure.
+        if (cancelToken != null && CancelToken.isCancel(e)) {
           return UpdateDownloadResult.failure(
             'Download cancelled.',
             cancelled: true,
@@ -275,20 +514,29 @@ class AppUpdateService {
     await _pruneOtherApks();
   }
 
-  /// Deletes `leadx-*.apk` / `*.part` files in the cache directory.
+  /// Deletes `leadx-*.apk` / `*.part` / `*.part.s*` files in the cache
+  /// directory.
   ///
   /// [keep] (its own path) is spared — a verified APK for the *current*
   /// release is reusable for a retry, so it is only removed once a newer
-  /// release supersedes it or the installer has taken over.
+  /// release supersedes it or the installer has taken over. The `.part`
+  /// match also catches the chunked downloader's sidecar slices
+  /// (`leadx-<code>.apk.part.s0` …), which must not outlive a download.
   Future<void> _pruneOtherApks({File? keep}) async {
     try {
       final dir = await getTemporaryDirectory();
-      final keepPath = keep?.absolute.path;
+      // `getTemporaryDirectory()` returns backslash paths on Windows while
+      // the download code builds `File('${dir.path}/$name')` — mixed
+      // separators would break a naive `==` and let the prune delete the
+      // APK that was just verified and renamed. Normalise separators and
+      // case (Windows is case-insensitive) before comparing.
+      final keepPath =
+          keep?.absolute.path.replaceAll(r'\', '/').toLowerCase();
       await for (final entity in dir.list()) {
         if (entity is! File) continue;
-        final p = entity.absolute.path;
+        final p = entity.absolute.path.replaceAll(r'\', '/').toLowerCase();
         if (p == keepPath) continue;
-        if (p.endsWith('.apk') || p.endsWith('.apk.part')) {
+        if (p.endsWith('.apk') || p.contains('.apk.part')) {
           await _deleteQuietly(entity);
         }
       }
@@ -353,6 +601,56 @@ class AppUpdateService {
     try {
       if (await f.exists()) await f.delete();
     } catch (_) {}
+  }
+}
+
+/// What a size/Range probe of the download URL learned.
+class _Probe {
+  const _Probe(this.total, this.rangeOk);
+
+  /// Total file size in bytes; 0 when nobody declared it.
+  final int total;
+
+  /// True when the server is range-capable (answered a ranged request with
+  /// 206) and its total length is known.
+  final bool rangeOk;
+}
+
+/// Marks a download slice that can no longer get a 206 — the server stopped
+/// honouring `Range` mid-download (a proxy, a CDN edge change). Caught at the
+/// top level, which then recovers with a single stream.
+class _RangeNotHonored implements Exception {
+  const _RangeNotHonored();
+
+  @override
+  String toString() => 'the download server stopped honouring Range requests';
+}
+
+/// Marks a user cancel from inside the chunked writer.
+class _DownloadCancelled implements Exception {
+  const _DownloadCancelled();
+}
+
+/// Coalesced progress reporting for the chunked path: 8 racing slices call
+/// [add] from the same event loop, and the dialog's `setState` only needs a
+/// handful of updates a second, not one per chunk.
+class _ProgressTracker {
+  _ProgressTracker(this.total, this.sink)
+      : step = total > 0 ? total ~/ 100 : 1;
+
+  final int total;
+  final void Function(int received, int total)? sink;
+  final int step;
+
+  int _reported = 0;
+  int _done = 0;
+
+  void add(int bytes) {
+    _done += bytes;
+    if (_done >= _reported + step || _done >= total) {
+      _reported = _done >= total ? total : _done;
+      sink?.call(_reported, total);
+    }
   }
 }
 

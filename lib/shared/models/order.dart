@@ -153,8 +153,8 @@ class Product {
     this.minimumClosingPrice = 0,
     required this.duration,
     this.durationLabel,
-    required this.apiKeyRequired,
-    required this.status,
+    this.apiKeyRequired = false,
+    this.status = 'active',
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
@@ -164,7 +164,19 @@ class Product {
         minimumClosingPrice: doubleFromJson(json['minimum_closing_price']) ?? 0,
         duration: json['duration'] as String? ?? '',
         durationLabel: json['duration_label'] as String?,
-        apiKeyRequired: json['api_key_required'] == true,
-        status: json['status'] as String? ?? '',
+        apiKeyRequired: json['api_key_required'] == true ||
+            json['api_key_required'] == 1 ||
+            json['api_key_required'] == '1',
+        status: (json['status'] as String?)?.isNotEmpty == true
+            ? json['status'] as String
+            : 'active',
       );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Product && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

@@ -22,6 +22,7 @@ class AppUpdateController extends ChangeNotifier {
     Duration? checkInterval,
     Future<UpdateCheckResult?> Function()? checker,
     this.onUpdateAvailable,
+    this.lastNotifiedVersionCode,
   })  : _checkInterval = checkInterval ?? const Duration(hours: 4),
         _checker = checker ?? AppUpdateService.instance.checkForUpdate;
 
@@ -32,6 +33,7 @@ class AppUpdateController extends ChangeNotifier {
 
   UpdateCheckResult? _result;
   int? _dismissedVersionCode;
+  int? lastNotifiedVersionCode;
   Timer? _timer;
   bool _stopped = false;
   bool _checking = false;
@@ -155,10 +157,14 @@ class AppUpdateController extends ChangeNotifier {
         await AppUpdateService.instance.clearCache();
       }
       if (result != null && result.isActionable && shouldPrompt()) {
-        try {
-          await onUpdateAvailable?.call(result);
-        } catch (e) {
-          debugPrint('[LeadX Update] onUpdateAvailable error: $e');
+        final vCode = result.latestVersion?.versionCode;
+        if (vCode != null && vCode != lastNotifiedVersionCode) {
+          lastNotifiedVersionCode = vCode;
+          try {
+            await onUpdateAvailable?.call(result);
+          } catch (e) {
+            debugPrint('[LeadX Update] onUpdateAvailable error: $e');
+          }
         }
       }
     } catch (e) {

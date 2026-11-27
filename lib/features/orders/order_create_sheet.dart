@@ -85,13 +85,18 @@ class _OrderSheetFormState extends State<_OrderSheetForm> {
   Future<void> _loadProducts() async {
     try {
       final res = await widget.services.api.products();
-      final data = (res['data'] as List<dynamic>?) ?? const [];
-      _products = data
-          .where((e) => (e as Map)['status'] == 'active')
-          .map((e) => Product.fromJson(e as Map<String, dynamic>))
+      final dynamic raw = res['data'] ?? res['products'];
+      final List<dynamic> list = raw is List ? raw : const [];
+      _products = list
+          .whereType<Map>()
+          .where((e) {
+            final status = e['status']?.toString().toLowerCase();
+            return status == null || status.isEmpty || status == 'active';
+          })
+          .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
           .toList();
       if (mounted) setState(() => _loadingProducts = false);
-    } on ApiException {
+    } catch (_) {
       if (mounted) setState(() => _loadingProducts = false);
     }
   }
@@ -105,7 +110,11 @@ class _OrderSheetFormState extends State<_OrderSheetForm> {
           _duration = p.duration;
         }
         if (_closing.text.isEmpty || _closingWasAutoSet) {
-          _closing.text = p.price.toStringAsFixed(2);
+          _closing.text = p.price > 0
+              ? (p.price == p.price.roundToDouble()
+                  ? p.price.toInt().toString()
+                  : p.price.toStringAsFixed(2))
+              : '';
           _closingWasAutoSet = true;
         }
       }

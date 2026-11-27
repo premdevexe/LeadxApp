@@ -36,7 +36,6 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
-  DateTime? _lastBackTime;
   bool _isLocked = false;
   bool _isAuthenticating = false;
   DateTime? _pausedAt;
@@ -159,7 +158,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
 
         // If app is currently locked by biometrics, allow immediate exit
@@ -175,22 +174,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           return;
         }
 
-        // On dashboard tab: require double back press within 2 seconds to exit app
-        final now = DateTime.now();
-        if (_lastBackTime == null || now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
-          _lastBackTime = now;
-          NativeFeedback.light();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Press back again to exit LeadX'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-          return;
-        }
-
-        // Allow app exit on second back press
-        SystemNavigator.pop();
+        // On dashboard tab: prompt user with exit confirmation pop up dialog
+        await ExitConfirmationDialog.showAndExit(context);
       },
       child: Stack(
         children: [
@@ -698,6 +683,15 @@ class _MenuBody extends StatelessWidget {
         row(Icons.task_alt_outlined, 'Follow-ups', () => _nav(context, const FollowUpsScreen())),
         row(Icons.report_problem_outlined, 'Customer Issues', () => _nav(context, const CustomerIssuesScreen())),
         header('Account'),
+        row(
+          Icons.power_settings_new_rounded,
+          'Exit App',
+          () {
+            close();
+            ExitConfirmationDialog.showAndExit(context);
+          },
+          labelColor: cs.onSurfaceVariant,
+        ),
         row(Icons.logout, 'Logout', logout,
             labelColor: StatusPalette.danger(cs)),
         const SizedBox(height: 16),

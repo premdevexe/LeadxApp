@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/network/services.dart';
@@ -336,13 +337,28 @@ class PushService {
   }
 
   /// Displays a local notification in the notification shade informing the user that an update is available.
-  Future<void> showUpdateNotification({
+  /// Deduplicated so that each build/version is notified at most ONCE per user/device.
+  Future<bool> showUpdateNotification({
     required String title,
     required String body,
     required int versionCode,
     required String versionName,
+    int? userId,
   }) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final userKey = userId != null ? 'notified_update_${userId}_$versionCode' : null;
+      final deviceKey = 'notified_update_v$versionCode';
+
+      // Ensure notification is only dispatched once per version per user/device
+      if ((userKey != null && prefs.getBool(userKey) == true) ||
+          prefs.getBool(deviceKey) == true) {
+        if (kDebugMode) {
+          debugPrint('[PushService] Update notification for version $versionCode already displayed. Suppressing duplicate.');
+        }
+        return false;
+      }
+
       await _local.show(
         id: AppConstants.updateNotificationId,
         title: title,
@@ -370,13 +386,22 @@ class PushService {
           ),
         ),
       );
+
+      // Persist delivery so it never repeats for this version
+      await prefs.setBool(deviceKey, true);
+      if (userKey != null) {
+        await prefs.setBool(userKey, true);
+      }
+
       if (kDebugMode) {
         debugPrint('[PushService] Posted update notification: $title - $body');
       }
+      return true;
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[PushService] Failed to show update notification: $e');
       }
+      return false;
     }
   }
 

@@ -157,5 +157,51 @@ void main() {
       await controller.checkNow();
       expect(callCount, equals(1));
     });
+
+    test('triggers onUpdateAvailable only ONCE per version across multiple repeated checks', () async {
+      var callCount = 0;
+      var currentVersion = 120;
+      final controller = AppUpdateController(
+        checker: () async => _result(available: true, versionCode: currentVersion),
+        onUpdateAvailable: (_) async => callCount++,
+      );
+      addTearDown(controller.dispose);
+
+      // Simulate 5 checks in a row (e.g. interval checks or resumes)
+      await controller.checkNow();
+      await controller.checkNow();
+      await controller.checkNow();
+      await controller.checkNow();
+      await controller.checkNow();
+
+      // Must be called exactly ONCE for build 120
+      expect(callCount, equals(1));
+      expect(controller.lastNotifiedVersionCode, equals(120));
+
+      // Now a new version arrives
+      currentVersion = 121;
+      await controller.checkNow();
+
+      // Now called once more for build 121
+      expect(callCount, equals(2));
+      expect(controller.lastNotifiedVersionCode, equals(121));
+
+      // Repeated checks on build 121 do not trigger again
+      await controller.checkNow();
+      expect(callCount, equals(2));
+    });
+
+    test('skips onUpdateAvailable if initial lastNotifiedVersionCode matches latest build', () async {
+      var callCount = 0;
+      final controller = AppUpdateController(
+        lastNotifiedVersionCode: 120,
+        checker: () async => _result(available: true, versionCode: 120),
+        onUpdateAvailable: (_) async => callCount++,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.checkNow();
+      expect(callCount, equals(0), reason: 'already notified in previous session');
+    });
   });
 }

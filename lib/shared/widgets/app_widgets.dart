@@ -8,6 +8,9 @@ import '../../core/services/app_config_service.dart';
 import '../format.dart';
 import '../models/subscription.dart' show ListMeta;
 
+export 'app_snackbar.dart';
+export 'exit_confirm_dialog.dart';
+
 /// Small, reusable UI pieces shared across feature screens.
 ///
 /// Content surfaces are flat SaaS cards: solid white (light) / near-black
